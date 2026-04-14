@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* BASE */
+body {
+  font-family: 'Inter', sans-serif;
+  background: #f6f8fb;
+}
+
+/* CARD */
+.card {
+  background: white;
+  border-radius: 18px;
+  padding: 20px;
+  border: 1px solid #eef1f5;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.04);
+}
+
+/* BADGE */
+.badge {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge-green {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.badge-yellow {
+  background: #fef9c3;
+  color: #ca8a04;
+}
+
+.badge-red {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* TEXT */
+.stat-title {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.stat-value {
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.text-blue { color: #2563eb; }
+.text-green { color: #16a34a; }
+.text-red { color: #dc2626; }
+.text-yellow { color: #ca8a04; }
+
+.class-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.class-count {
+  font-size: 34px;
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+.class-label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.sensor {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.sidebar {
+  background: white;
+  border-right: 1px solid #e5e7eb;
+}
+
+.topbar {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.filter-btn {
+  background: #f1f5f9;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.filter-btn.active {
+  background: #e2e8f0;
+}
