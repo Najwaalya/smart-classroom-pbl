@@ -1,0 +1,238 @@
+@import "tailwindcss";
+
+:root {
+  /* Core Colors */
+  --color-primary: #183182;
+  --color-primary-dark: #122460;
+  --color-secondary: #e8eefa;
+  --color-accent: #10b981;
+  --color-accent-hover: #059669;
+  
+  /* Backgrounds */
+  --background-base: #f4f9f6; /* Modern subtle green tint */
+  --background-card: #ffffff;
+  --background-gradient-start: #ffffff;
+  --background-gradient-mid: #f4f9f6;
+  --background-gradient-end: #d8efe5;
+
+  /* Form & Text Colors */
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --border-light: rgba(241, 245, 249, 0.5);
+
+  /* Font Families */
+  --font-sans: var(--font-geist-sans), "Inter", system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), "Monaco", "Consolas", monospace;
+
+  /* Shadows for depth */
+  --shadow-soft: 0 20px 25px -5px rgba(226, 232, 240, 0.5), 0 8px 10px -6px rgba(226, 232, 240, 0.5);
+  --shadow-float: 0 20px 40px -5px rgba(0, 0, 0, 0.1);
+  --shadow-glow: 0 0 15px rgba(24, 49, 130, 0.2);
+}
+
+@theme inline {
+  --color-background: var(--background-base);
+  --color-foreground: var(--text-primary);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+/* ==========================================================================
+   SCSS Variables & Mixins for Responsiveness & UI Effects
+   ========================================================================== */
+
+$breakpoints: (
+  xs: 480px,
+  sm: 640px,
+  md: 768px,
+  lg: 1024px,
+  xl: 1280px,
+  2xl: 1536px,
+);
+
+// Mixin for standard media queries
+@mixin respond-to($breakpoint) {
+  @if map-has-key($breakpoints, $breakpoint) {
+    @media (min-width: map-get($breakpoints, $breakpoint)) {
+      @content;
+    }
+  } @else {
+    @warn "Tipe breakpoint tidak valid: #{$breakpoint}. Gunakan: #{map-keys($breakpoints)}.";
+  }
+}
+
+// Mixin for modern Glassmorphism effect
+@mixin glass-effect {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: var(--shadow-soft);
+}
+
+// Mixin for Flex Centering
+@mixin flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ==========================================================================
+   Global Resets & Body Topology
+   ========================================================================== */
+
+html {
+  scroll-behavior: smooth;
+  font-size: 16px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  background-color: var(--background-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ==========================================================================
+   Custom Global Scrollbar
+   ========================================================================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 99px;
+
+  &:hover {
+    background: var(--text-secondary);
+  }
+}
+
+/* ==========================================================================
+   Global Animations (Keyframes)
+   ========================================================================== */
+@keyframes fadeInSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0% { box-shadow: 0 0 0 0 rgba(24, 49, 130, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(24, 49, 130, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(24, 49, 130, 0); }
+}
+
+/* Gunakan class animasi ini secara global bila perlu */
+.anim-fade-up {
+  animation: fadeInSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ==========================================================================
+   Global Utility Classes (Sering dipakai & Reusable Element)
+   ========================================================================== */
+
+/* Main Container Layouts */
+.page-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: map-get($breakpoints, xl);
+  margin: 0 auto;
+  padding: 1.5rem;
+  
+  @include respond-to(md) {
+    padding: 3rem 2rem;
+  }
+}
+
+/* Glass UI Component (Misal untuk box chart atau navigasi) */
+.glass-panel {
+  @include glass-effect;
+  border-radius: 1.5rem;
+  padding: 2rem;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-float);
+  }
+}
+
+/* Primary Button Design */
+.btn-primary {
+  @include flex-center;
+  background-color: var(--color-primary);
+  color: #ffffff;
+  padding: 0.875rem 1.5rem;
+  border-radius: 1rem;
+  font-weight: 700;
+  font-size: 0.875rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 6px -1px rgba(24, 49, 130, 0.2), 0 2px 4px -1px rgba(24, 49, 130, 0.1);
+
+  &:hover {
+    background-color: var(--color-primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(24, 49, 130, 0.3);
+  }
+  
+  &:active {
+    transform: scale(0.96);
+  }
+
+  &.anim-pulse {
+    animation: pulseGlow 2s infinite;
+  }
+}
+
+/* Typography Utilities */
+.text-heading {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--color-primary);
+  letter-spacing: -0.025em;
+  margin-bottom: 0.75rem;
+
+  @include respond-to(md) {
+    font-size: 2.75rem;
+  }
+}
+
+.text-subheading {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  line-height: 1.6;
+  max-width: 60ch;
+
+  @include respond-to(md) {
+    font-size: 1.125rem;
+  }
+}

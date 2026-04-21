@@ -1,9 +1,19 @@
-export type Status = "Kosong" | "Tidak Pasti" | "Aktif";
+export type StatusType = "AKTIF" | "EMPTY" | "UNCERTAIN";
+
+export type Status = {
+  label: StatusType;
+  color: string;
+  text: string;
+  light: string;
+};
 
 export type ClassData = {
-  id: number;
+  id: string;
   name: string;
-  people: number;
+  wing: string;
+  level: string;
+  students: number;
   temp: number;
   pir: boolean;
+  lastActivity: string;
 };
