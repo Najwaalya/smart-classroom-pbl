@@ -13,10 +13,11 @@ import {
   Droplets,
 } from "lucide-react";
 import { useRoomData } from "@/contexts/RoomDataContext";
+import { schedules } from "../../lib/schedule";
+
 
 export default function Dashboard() {
   const { rooms, dbStatus } = useRoomData();
-
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "empty" | "uncertain">("all");
 
@@ -58,9 +59,6 @@ export default function Dashboard() {
           <h1 className="text-4xl md:text-5xl font-black text-slate-800 tracking-tight leading-none drop-shadow-sm">
             Ringkasan Ruangan
           </h1>
-          <p className="text-slate-500 mt-2 text-sm font-semibold">
-            Gambaran Kepadatan Fase II · Kapasitas Pusat
-          </p>
         </div>
 
         <div className="flex gap-4 anim-fade-up" style={{ animationDelay: "100ms" }}>
