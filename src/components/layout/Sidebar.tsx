@@ -25,9 +25,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
-    const roleValue = getRole();
-    // eslint-disable-next-line
-    setRole(roleValue);
+    setRole(getRole());
   }, []);
 
   // NAV ITEMS BASED ON ROLE

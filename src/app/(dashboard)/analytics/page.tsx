@@ -37,12 +37,12 @@ export default function Analytics() {
     const role = getRole();
 
     if (!role) {
-      router.push("/login");
+      router.replace("/login");
       return;
     }
 
     if (role !== "dosen") {
-      router.push("/");
+      router.replace("/");
       return;
     }
   }, [router]);
@@ -92,6 +92,7 @@ export default function Analytics() {
   ];
 
   return (
+    <div className="page-wrapper anim-fade-up">
     <div className="flex flex-col gap-8 pb-12">
 
       {/* HEADER */}
@@ -150,6 +151,7 @@ export default function Analytics() {
         </div>
       </div>
 
+    </div>
     </div>
   );
 }
