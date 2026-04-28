@@ -5,6 +5,7 @@ import { Eye, EyeOff, HelpCircle } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./login.module.scss";
+import { login } from "@/lib/auth";
 
 export default function Login() {
   const router = useRouter();
@@ -12,11 +13,23 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // In a real app: call API. For now just navigate to dashboard.
+const handleSubmit = (e: React.FormEvent) => {
+  e.preventDefault();
+
+  const user = login(email, password);
+
+  if (!user) {
+    alert("Email atau password salah!");
+    return;
+  }
+
+  // redirect berdasarkan role
+  if (user.role === "dosen") {
     router.push("/");
-  };
+  } else {
+    router.push("/");
+  }
+};
 
   return (
     <div className={styles.container}>
