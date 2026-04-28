@@ -168,6 +168,16 @@ img {
   @include respond-to(md) {
     padding: 3rem 2rem;
   }
+
+  /* Room detail page: full width, override max-width & padding */
+  &.page-wrapper--full {
+    max-width: 100%;
+    padding: 1.5rem;
+
+    @include respond-to(md) {
+      padding: 2rem 2.5rem;
+    }
+  }
 }
 
 /* Glass UI Component (Misal untuk box chart atau navigasi) */

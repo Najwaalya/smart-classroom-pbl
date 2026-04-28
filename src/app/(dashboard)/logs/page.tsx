@@ -36,13 +36,13 @@ export default function Logs() {
       const role = getRole();
 
       if (!role) {
-        router.push("/login");
+        router.replace("/login");
         return;
       }
 
       // MAHASISWA TIDAK BOLEH
       if (role === "mahasiswa") {
-        router.push("/");
+        router.replace("/");
         return;
       }
     }, [router]);
@@ -52,6 +52,7 @@ export default function Logs() {
   const filtered = filter === "all" ? allLogs : allLogs.filter((l) => l.type === filter);
 
   return (
+    <div className="page-wrapper anim-fade-up">
     <div className="flex flex-col gap-8 pb-12">
       <div>
         <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Activity Logs</h1>
@@ -104,6 +105,7 @@ export default function Logs() {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }
