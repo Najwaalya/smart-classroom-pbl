@@ -46,7 +46,8 @@ export default function Dashboard() {
   const totalOccupancy = useMemo(() => rooms.reduce((acc, curr) => acc + curr.students, 0), [rooms]);
 
   return (
-    <div className="flex flex-col gap-6 md:gap-8 pb-12">
+    <div className="page-wrapper anim-fade-up">
+      <div className="flex flex-col gap-6 md:gap-8 pb-12">
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="anim-fade-up" style={{ animationDelay: "0ms" }}>
@@ -274,6 +275,7 @@ export default function Dashboard() {
           })}
         </div>
       )}
+    </div>
     </div>
   );
 }
