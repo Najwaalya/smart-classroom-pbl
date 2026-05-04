@@ -80,6 +80,11 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
 
   const room = rooms.find((r) => r.id === id);
 
+  // Hooks harus dipanggil sebelum early return
+  const hourlyData = useMemo(() => room ? buildHourlyData(room.students) : [], [room]);
+  const todaySchedules = useMemo(() => getTodaySchedules(id), [id]);
+  const allSchedules = useMemo(() => getAllSchedules(id), [id]);
+
   if (!room) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
@@ -93,10 +98,6 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
       </div>
     );
   }
-
-  const hourlyData = useMemo(() => buildHourlyData(room.students), [room.students]);
-  const todaySchedules = useMemo(() => getTodaySchedules(id), [id]);
-  const allSchedules = useMemo(() => getAllSchedules(id), [id]);
 
   const fillPct = Math.min(100, Math.round((room.students / CAPACITY) * 100));
 
