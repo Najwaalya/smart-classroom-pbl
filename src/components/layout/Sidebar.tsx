@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useRoomData } from "@/contexts/RoomDataContext";
 import { getRole } from "@/lib/auth";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 interface SidebarProps {
   open: boolean;
@@ -20,13 +20,8 @@ interface SidebarProps {
 
 export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const { dbStatus } = useRoomData();
 
-  const [role, setRole] = useState<string | null>(null);
-
-  useEffect(() => {
-    setRole(getRole());
-  }, []);
+  const [role] = useState<string | null>(() => getRole());
 
   // NAV ITEMS BASED ON ROLE
   const navItems = [
