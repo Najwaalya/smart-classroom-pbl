@@ -31,12 +31,12 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   // NAV ITEMS BASED ON ROLE
   const navItems = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
-    { name: "Jadwal", href: "/jadwal", icon: CalendarDays },
+    { name: "Jadwal",    href: "/jadwal",  icon: CalendarDays },
 
     ...(role === "dosen"
       ? [
           { name: "Analitik", href: "/analytics", icon: LineChart },
-          { name: "Riwayat", href: "/logs", icon: History },
+          { name: "Riwayat",  href: "/logs",       icon: History },
         ]
       : []),
   ];
