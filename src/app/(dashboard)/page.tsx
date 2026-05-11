@@ -1,14 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Users, Search, Activity, Wind, ShieldAlert } from "lucide-react";
-import { useRoomData } from "@/contexts/RoomDataContext";
-import { RoomCard } from "@/components/RoomCard";
-import Link from "next/link";
-import { CalendarDays } from "lucide-react";
-
-import { Activity, Wind, ShieldAlert } from "lucide-react";
-
+import { Search, Activity, Wind, ShieldAlert } from "lucide-react";
 import { useRoomData } from "@/contexts/RoomDataContext";
 
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
@@ -18,10 +11,10 @@ import RoomCard from "@/components/dashboard/RoomCard";
 
 export default function Dashboard() {
   const { rooms } = useRoomData();
-
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "active" | "empty" | "uncertain">("all");
 
-  const { activeCount, uncertainCount, emptyCount, filteredRooms, totalOccupancy } = useMemo(() => {
+  const { activeCount, uncertainCount, emptyCount, filteredRooms } = useMemo(() => {
     const filtered = rooms.filter((r) => {
       const matchSearch =
         r.id.toLowerCase().includes(search.toLowerCase()) ||
@@ -30,192 +23,16 @@ export default function Dashboard() {
       return matchSearch && matchFilter;
     });
     return {
-      activeCount:    rooms.filter(r => r.status === "active").length,
+      activeCount: rooms.filter(r => r.status === "active").length,
       uncertainCount: rooms.filter(r => r.status === "uncertain").length,
-      emptyCount:     rooms.filter(r => r.status === "empty").length,
-      filteredRooms:  filtered,
-      totalOccupancy: rooms.reduce((acc, curr) => acc + curr.students, 0),
+      emptyCount: rooms.filter(r => r.status === "empty").length,
+      filteredRooms: filtered,
     };
   }, [rooms, search, filter]);
 
   return (
-    <div className="page-wrapper anim-fade-up">
-      <div className="flex flex-col gap-6 md:gap-8 pb-12">
-
-        {/* HEADER */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div className="anim-fade-up" style={{ animationDelay: "0ms" }}>
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/60 border border-white shadow-sm mb-3">
-              <span className={`w-2 h-2 rounded-full animate-pulse ${dbStatus === 'online' ? 'bg-[var(--color-primary)]' : 'bg-orange-500'}`} />
-              <span className="text-[10px] font-bold text-slate-500 tracking-widest uppercase">
-                {dbStatus === 'online' ? "Sinkronisasi Waktu Nyata" : "Koneksi IoT Terhambat (Simulasi)"}
-              </span>
-            </div>
-            <h1 className="text-4xl md:text-5xl font-black text-slate-800 tracking-tight leading-none drop-shadow-sm">
-              Ringkasan Ruangan
-            </h1>
-          </div>
-          <div className="flex gap-4 anim-fade-up" style={{ animationDelay: "100ms" }}>
-            <div className="glass-panel px-6 py-4 flex flex-col items-end min-w-[140px] hover:shadow-md transition-all">
-              <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-1">Total Mahasiswa</span>
-              <div className="text-4xl font-black text-[var(--color-primary)]">{totalOccupancy}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* METRICS ROW */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
-          <div className="glass-panel p-6 flex flex-col gap-4 border-l-[4px] border-l-emerald-500 anim-fade-up" style={{ animationDelay: "150ms" }}>
-            <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
-                <Activity size={20} />
-              </div>
-              <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md uppercase tracking-widest">Aman</span>
-            </div>
-            <div>
-              <div className="text-3xl font-black text-slate-800">{activeCount}</div>
-              <div className="text-xs font-bold text-slate-500 mt-1 uppercase tracking-wide">Kelas Aktif</div>
-            </div>
-          </div>
-
-          <div className="glass-panel p-6 flex flex-col gap-4 border-l-[4px] border-l-slate-300 anim-fade-up" style={{ animationDelay: "200ms" }}>
-            <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 shadow-inner">
-                <Wind size={20} />
-              </div>
-              <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md uppercase tracking-widest">Hemat Energi</span>
-            </div>
-            <div>
-              <div className="text-3xl font-black text-slate-800">{emptyCount}</div>
-              <div className="text-xs font-bold text-slate-500 mt-1 uppercase tracking-wide">Kelas Kosong</div>
-            </div>
-          </div>
-
-          <div className="glass-panel p-6 flex flex-col gap-4 border-l-[4px] border-l-amber-400 anim-fade-up" style={{ animationDelay: "250ms" }}>
-            <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-500 shadow-inner">
-                <ShieldAlert size={20} />
-              </div>
-              <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-2.5 py-1 rounded-md uppercase tracking-widest">Cek Manual</span>
-            </div>
-            <div>
-              <div className="text-3xl font-black text-slate-800">{uncertainCount}</div>
-              <div className="text-xs font-bold text-slate-500 mt-1 uppercase tracking-wide">Tidak Pasti</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Banner booking */}
-        <Link href="/jadwal"
-          className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-primary-dark)] text-white rounded-2xl shadow-md hover:shadow-lg transition-all anim-fade-up"
-          style={{ animationDelay: "280ms" }}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center">
-              <CalendarDays size={20} />
-            </div>
-            <div>
-              <p className="text-sm font-black">Booking Ruangan</p>
-              <p className="text-[10px] opacity-70 font-medium mt-0.5">Klik untuk buka jadwal dan booking slot kosong</p>
-            </div>
-          </div>
-          <span className="text-xs font-black opacity-80 uppercase tracking-widest">Buka Jadwal →</span>
-        </Link>
-
-        {/* FILTER & SEARCH */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2">
-          <div className="flex bg-white/60 backdrop-blur-sm p-1 rounded-xl shadow-sm border border-white/50 overflow-x-auto hide-scrollbar">
-            {([
-              { key: "all",       label: "SEMUA RUANG" },
-              { key: "active",    label: "AKTIF" },
-              { key: "empty",     label: "KOSONG" },
-              { key: "uncertain", label: "TIDAK PASTI" },
-            ] as const).map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setFilter(f.key)}
-                className={`px-5 py-2.5 rounded-lg text-xs font-black transition-all whitespace-nowrap uppercase tracking-widest ${
-                  filter === f.key
-                    ? "bg-white text-[var(--color-primary)] shadow-sm"
-                    : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input
-              type="text"
-              placeholder="Cari ruangan/sayap..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md rounded-xl text-sm font-semibold placeholder:text-slate-400 border border-white outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 transition-all shadow-sm focus:bg-white"
-            />
-          </div>
-        </div>
-
-        {/* ROOM GRID */}
-        {filteredRooms.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-20 glass-panel">
-            <Search size={48} className="text-slate-300 mb-4" />
-            <h3 className="text-xl font-bold text-slate-600">Tidak ada ruangan ditemukan</h3>
-            <p className="text-slate-400 text-sm mt-1">Coba sesuaikan kata kunci pencarian atau filter.</p>
-            <button
-              onClick={() => { setSearch(""); setFilter("all"); }}
-              className="mt-6 px-6 py-2 bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-sm font-bold rounded-lg hover:bg-[var(--color-primary)]/20 transition-colors"
-            >
-              Reset Pencarian
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-            {filteredRooms.map((room, index) => (
-              <RoomCard key={room.id} room={room} index={index} />
-            ))}
-          </div>
-        )}
-  const [filter, setFilter] = useState<
-    "all" | "active" | "empty" | "uncertain"
-  >("all");
-
-  const { activeCount, uncertainCount, emptyCount, filteredRooms } =
-    useMemo(() => {
-      const activeData = rooms.filter((r) => r.status === "active");
-
-      const uncertainData = rooms.filter(
-        (r) => r.status === "uncertain"
-      );
-
-      const emptyData = rooms.filter((r) => r.status === "empty");
-
-      const filtered = rooms.filter((r) => {
-        const matchSearch =
-          r.id.toLowerCase().includes(search.toLowerCase()) ||
-          (r.wing || "")
-            .toLowerCase()
-            .includes(search.toLowerCase());
-
-        const matchFilter =
-          filter === "all" || r.status === filter;
-
-        return matchSearch && matchFilter;
-      });
-
-      return {
-        activeCount: activeData.length,
-        uncertainCount: uncertainData.length,
-        emptyCount: emptyData.length,
-        filteredRooms: filtered,
-      };
-    }, [rooms, search, filter]);
-
-  return (
     <div className="page-wrapper">
       <div className="flex flex-col gap-6 pb-12">
-
         <DashboardHeader />
 
         {/* METRICS */}
@@ -257,11 +74,25 @@ export default function Dashboard() {
         />
 
         {/* ROOM GRID */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredRooms.map((room) => (
-            <RoomCard key={room.id} room={room} />
-          ))}
-        </div>
+        {filteredRooms.length === 0 ? (
+          <div className="flex flex-col items-center justify-center p-20 glass-panel">
+            <Search size={48} className="text-slate-300 mb-4" />
+            <h3 className="text-xl font-bold text-slate-600">Tidak ada ruangan ditemukan</h3>
+            <p className="text-slate-400 text-sm mt-1">Coba sesuaikan kata kunci pencarian atau filter.</p>
+            <button
+              onClick={() => { setSearch(""); setFilter("all"); }}
+              className="mt-6 px-6 py-2 bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-sm font-bold rounded-lg hover:bg-[var(--color-primary)]/20 transition-colors"
+            >
+              Reset Pencarian
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filteredRooms.map((room) => (
+              <RoomCard key={room.id} room={room} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

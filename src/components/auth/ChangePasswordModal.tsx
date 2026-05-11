@@ -17,54 +17,82 @@ export default function ChangePasswordModal({
   isOpen,
   onClose,
 }: ChangePasswordModalProps) {
-  const [oldPw, setOldPw] = useState("");
 
-  const [newPw, setNewPw] = useState("");
+  const [oldPw, setOldPw] =
+    useState("");
 
-  const [confirmPw, setConfirmPw] = useState("");
+  const [newPw, setNewPw] =
+    useState("");
 
-  const [error, setError] = useState("");
+  const [confirmPw, setConfirmPw] =
+    useState("");
 
-  const [success, setSuccess] = useState(false);
+  const [error, setError] =
+    useState("");
 
-  function handleSubmit(e: React.FormEvent) {
+  const [success, setSuccess] =
+    useState(false);
+
+  function resetForm() {
+    setOldPw("");
+    setNewPw("");
+    setConfirmPw("");
+    setError("");
+    setSuccess(false);
+  }
+
+  function handleClose() {
+    resetForm();
+    onClose();
+  }
+
+  function handleSubmit(
+    e: React.FormEvent
+  ) {
     e.preventDefault();
 
     setError("");
 
+    // VALIDASI
     if (newPw.length < 6) {
-      setError("Password minimal 6 karakter.");
+      setError(
+        "Password minimal 6 karakter."
+      );
       return;
     }
 
     if (newPw !== confirmPw) {
-      setError("Konfirmasi password tidak cocok.");
+      setError(
+        "Konfirmasi password tidak cocok."
+      );
       return;
     }
 
-    const email = localStorage.getItem("email") ?? "";
+    // IDENTIFIER LOGIN
+    const identifier =
+      localStorage.getItem("email") ||
+      localStorage.getItem("userId") ||
+      "";
 
+    // CHANGE PASSWORD
     const ok = changePassword(
-      email,
+      identifier,
       oldPw,
       newPw
     );
 
     if (!ok) {
-      setError("Password lama salah.");
+      setError(
+        "Password lama salah."
+      );
       return;
     }
 
+    // SUCCESS
     setSuccess(true);
 
     setTimeout(() => {
-      setSuccess(false);
-
-      setOldPw("");
-      setNewPw("");
-      setConfirmPw("");
-
-      onClose();
+      handleClose();
     }, 1500);
   }
 
@@ -73,17 +101,20 @@ export default function ChangePasswordModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
 
+      {/* BACKDROP */}
       <div
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={handleClose}
       />
 
+      {/* MODAL */}
       <div className="relative bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden">
 
         {/* HEADER */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
 
           <div className="flex items-center gap-2 text-[var(--color-primary)]">
+
             <KeyRound size={18} />
 
             <h2 className="text-base font-black">
@@ -92,8 +123,8 @@ export default function ChangePasswordModal({
           </div>
 
           <button
-            onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-slate-100"
+            onClick={handleClose}
+            className="p-1.5 rounded-full hover:bg-slate-100 transition-colors"
           >
             <X size={16} />
           </button>
@@ -137,6 +168,7 @@ export default function ChangePasswordModal({
             </p>
           )}
 
+          {/* BUTTON */}
           <button
             type="submit"
             className="w-full py-3 bg-[var(--color-primary)] text-white text-sm font-black rounded-xl hover:opacity-90 transition-all"

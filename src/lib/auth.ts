@@ -1,41 +1,61 @@
 export type UserRole = "dosen" | "mahasiswa";
 
 export type User = {
-  email: string;
+  email?: string;
+  nim?: string;
+  nip?: string;
   password: string;
   role: UserRole;
   name: string;
-  id: string; // NIP untuk dosen, NIM untuk mahasiswa
 };
 
 const users: User[] = [
   {
     email: "dosen@gmail.com",
-    password: "123456",
+    nip: "197805122005011002",
+    password: "197805122005011002",
     role: "dosen",
     name: "Dr. Budi Santoso, M.T.",
-    id: "197805122005011002",
   },
   {
-    email: "mahasiswa@gmail.com",
-    password: "123456",
+    nim: "2341720024",
+    password: "2341720024",
     role: "mahasiswa",
     name: "Moch. A.B.A",
-    id: "2341720024",
   },
 ];
 
-export function login(email: string, password: string) {
-  const user = users.find(
-    (u) => u.email === email && u.password === password
-  );
+export function login(identifier: string, password: string) {
+  const user = users.find((u) => {
+    // Login dosen → email + NIP
+    if (u.role === "dosen") {
+      return (
+        u.email === identifier &&
+        u.password === password
+      );
+    }
+
+    // Login mahasiswa → NIM + NIM
+    if (u.role === "mahasiswa") {
+      return (
+        u.nim === identifier &&
+        u.password === password
+      );
+    }
+
+    return false;
+  });
 
   if (!user) return null;
 
   localStorage.setItem("role", user.role);
-  localStorage.setItem("email", user.email);
   localStorage.setItem("userName", user.name);
-  localStorage.setItem("userId", user.id);
+
+  if (user.role === "dosen") {
+    localStorage.setItem("userId", user.nip || "");
+  } else {
+    localStorage.setItem("userId", user.nim || "");
+  }
 
   return user;
 }
@@ -45,24 +65,43 @@ export function getRole(): UserRole | null {
   return localStorage.getItem("role") as UserRole | null;
 }
 
-export function getUserInfo(): { name: string; id: string; role: UserRole } | null {
+export function getUserInfo(): {
+  name: string;
+  id: string;
+  role: UserRole;
+} | null {
   if (typeof window === "undefined") return null;
+
   const role = localStorage.getItem("role") as UserRole | null;
   const name = localStorage.getItem("userName");
-  const id   = localStorage.getItem("userId");
-  if (!role || !name || !id) return null;
-  return { role, name, id };
-}
+  const id = localStorage.getItem("userId");
 
-export function changePassword(email: string, oldPassword: string, newPassword: string, isReset = false): boolean {
-  const user = users.find((u) => u.email === email);
-  if (!user) return false;
-  // Mode reset (dari forgot password): bypass cek password lama
-  if (!isReset && user.password !== oldPassword) return false;
-  user.password = newPassword;
-  return true;
+  if (!role || !name || !id) return null;
+
+  return { role, name, id };
 }
 
 export function logout() {
   localStorage.clear();
+}
+
+export function changePassword(
+  email: string,
+  oldPassword: string,
+  newPassword: string,
+  isForgotPassword: boolean = false
+): boolean {
+  const user = users.find((u) => u.email === email || u.nim === email);
+
+  if (!user) {
+    return false;
+  }
+
+  // Jika forgot password, skip verifikasi password lama
+  if (!isForgotPassword && user.password !== oldPassword) {
+    return false;
+  }
+
+  user.password = newPassword;
+  return true;
 }

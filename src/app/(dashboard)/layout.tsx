@@ -1,10 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { useRouter } from "next/navigation";
 
 import { Sidebar } from "@/components/layout/Sidebar";
+
 import { Topbar } from "@/components/layout/Topbar";
 
 import { RoomDataProvider } from "@/contexts/RoomDataContext";
@@ -18,54 +23,46 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const router = useRouter();
 
+  const router = useRouter();
+  const hasCheckedRef = useRef(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // CHECK AUTH
-  const role = getRole();
+  // CEK AUTH DAN REDIRECT
+  useEffect(() => {
+    if (hasCheckedRef.current) return;
+    hasCheckedRef.current = true;
 
-  if (!checked) return null;
+    const role = getRole();
+    if (!role) {
+      router.replace("/login");
+    }
+  }, [router]);
+
+  const role = getRole();
+  if (!role) return null;
 
   return (
     <RoomDataProvider>
       <BookingProvider>
         <div className="min-h-screen flex flex-col font-sans bg-[var(--background-base)]">
+          {/* TOPBAR */}
           <Topbar onMenuToggle={() => setSidebarOpen((prev) => !prev)} />
+          
           <div className="flex flex-1 pt-16">
-            <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+            {/* SIDEBAR */}
+            <Sidebar
+              open={sidebarOpen}
+              onClose={() => setSidebarOpen(false)}
+            />
+
+            {/* CONTENT */}
             <main className="flex-1 lg:ml-64 w-full h-full relative z-0 pb-12">
               {children}
             </main>
           </div>
+          
           <ToastContainer />
-  // Redirect jika belum login
-  if (!role) {
-    router.replace("/login");
-    return null;
-  }
-
-  return (
-    <RoomDataProvider>
-      <div className="min-h-screen flex flex-col font-sans bg-[var(--background-base)]">
-
-        <Topbar
-          onMenuToggle={() =>
-            setSidebarOpen((prev) => !prev)
-          }
-        />
-
-        <div className="flex flex-1 pt-16">
-
-          <Sidebar
-            open={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
-          />
-
-          <main className="flex-1 lg:ml-64 w-full h-full relative z-0 pb-12">
-            {children}
-          </main>
-
         </div>
       </BookingProvider>
     </RoomDataProvider>

@@ -261,15 +261,15 @@
 }
 
 .imageBox {
-  width: 110%;
-  height: 80vh;
-  background-color: #eef5f2;
-  border-top-left-radius: 5rem;
-  border-bottom-left-radius: 5rem;
-  overflow: hidden;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  width: 100%;
+  height: 100%;
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+  border-radius: 24px;
+
+  background-image: url("/images/jti-polinema.jpg");
+  background-size: cover;
+  background-position: center;
 }
 
 .imageOverlay {
@@ -279,7 +279,7 @@
   background-position: center;
   opacity: 0.4;
   filter: grayscale(60%);
-  background-image: url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=2070&auto=format&fit=crop');
+  background-image: url('/images/jti-polinema.jpg');
 }
 
 .imageGradient {

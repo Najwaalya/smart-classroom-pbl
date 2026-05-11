@@ -8,8 +8,8 @@ import {
   History,
   X,
   CalendarDays,
+  BookOpen,
 } from "lucide-react";
-import { useRoomData } from "@/contexts/RoomDataContext";
 import { getRole } from "@/lib/auth";
 import { useState } from "react";
 
@@ -26,12 +26,19 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   // NAV ITEMS BASED ON ROLE
   const navItems = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
-    { name: "Jadwal",    href: "/jadwal",  icon: CalendarDays },
+    {
+      name: "Jadwal & Monitoring",
+      href: "/schedule",
+      icon: CalendarDays,
+    },
+    ...(role === "mahasiswa"
+      ? [{ name: "Booking Ruangan", href: "/booking", icon: BookOpen }]
+      : []),
 
     ...(role === "dosen"
       ? [
           { name: "Analitik", href: "/analytics", icon: LineChart },
-          { name: "Riwayat",  href: "/logs",       icon: History },
+          { name: "Riwayat", href: "/logs", icon: History },
         ]
       : []),
   ];
@@ -75,8 +82,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           <nav className="flex flex-col gap-2">
             {navItems.map((item) => {
               const isActive =
-                pathname === item.href ||
-                (item.href !== "/" && pathname.startsWith(item.href));
+                item.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(item.href);
 
               const Icon = item.icon;
 
