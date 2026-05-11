@@ -9,7 +9,6 @@ import {
   X,
   CalendarDays,
 } from "lucide-react";
-import { useRoomData } from "@/contexts/RoomDataContext";
 import { getRole } from "@/lib/auth";
 import { useState } from "react";
 
