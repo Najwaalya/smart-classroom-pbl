@@ -274,20 +274,20 @@ export function Topbar({
                       </p>
 
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        {userInfo?.role === "dosen"
+                        {userInfo?.role === "admin"
                           ? `NIP: ${userInfo.id}`
                           : `NIM: ${userInfo?.id}`}
                       </p>
 
                       <span
                         className={`inline-block mt-1 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${
-                          userInfo?.role === "dosen"
+                          userInfo?.role === "admin"
                             ? "bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
                             : "bg-emerald-50 text-emerald-700"
                         }`}
                       >
-                        {userInfo?.role === "dosen"
-                          ? "Dosen"
+                        {userInfo?.role === "admin"
+                          ? "Admin"
                           : "Mahasiswa"}
                       </span>
                     </div>

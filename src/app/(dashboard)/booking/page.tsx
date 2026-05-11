@@ -18,18 +18,26 @@ import { BookingForm, BookingRecord } from "@/components/booking/BookingForm";
 import { BookingCard } from "@/components/booking/BookingCard";
 
 export default function BookingPage() {
-  const role = getRole();
-  const userInfo = getUserInfo();
-  const myId = typeof window !== "undefined" ? localStorage.getItem("userId") : null;
+  const [role, setRole] = useState<string | null>(null);
+  const [userInfo, setUserInfo] = useState<any>(null);
+  const [myId, setMyId] = useState<string | null>(null);
   const { rooms } = useRoomData();
 
   const [selectedFloor, setSelectedFloor] = useState<string>("5");
-  const [selectedDay, setSelectedDay] = useState<string>(getCurrentDay());
+  const [selectedDay, setSelectedDay] = useState<string>("Monday");
 
   // Semua booking yang dibuat via form ini (synced dengan localStorage)
   const [localBookings, setLocalBookings] = useState<BookingRecord[]>([]);
   // Notifikasi auto-cancel
   const [autoCancelMsg, setAutoCancelMsg] = useState<string | null>(null);
+
+  // Initialize client-side only data
+  useEffect(() => {
+    setRole(getRole());
+    setUserInfo(getUserInfo());
+    setMyId(localStorage.getItem("userId"));
+    setSelectedDay(getCurrentDay());
+  }, []);
 
   // Load bookings dari localStorage saat mount
   useEffect(() => {

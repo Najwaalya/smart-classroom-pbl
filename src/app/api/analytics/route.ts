@@ -1,64 +1,33 @@
 import { NextResponse } from "next/server";
 
-interface IoTData {
-  timestamp: string;
-  occupancy: number;
-  temperature: number;
-}
-
-interface HourlyData {
-  time: string;
-  occupancy: number;
-  temp: number;
-}
-
-interface WeeklyData {
-  day: string;
-  rooms: number;
-  avg: number;
-}
-
-interface AnalyticsResponse {
-  data: IoTData[];
-}
-
 export async function GET() {
-  try {
-    // 🔥 nanti ganti ini dengan fetch dari Azure / DB
-    const res = await fetch(process.env.ANALYTICS_API_URL as string, {
-      cache: "no-store",
-    });
+  // Simulasi data analytics
+  // Nanti bisa diganti dengan data real dari database
+  
+  const hourlyData = [
+    { time: "07:00", occupancy: 12, temp: 22.5 },
+    { time: "08:00", occupancy: 28, temp: 23.1 },
+    { time: "09:00", occupancy: 45, temp: 24.2 },
+    { time: "10:00", occupancy: 52, temp: 24.8 },
+    { time: "11:00", occupancy: 48, temp: 25.1 },
+    { time: "12:00", occupancy: 35, temp: 24.5 },
+    { time: "13:00", occupancy: 42, temp: 24.9 },
+    { time: "14:00", occupancy: 55, temp: 25.3 },
+    { time: "15:00", occupancy: 38, temp: 24.7 },
+    { time: "16:00", occupancy: 22, temp: 23.8 },
+  ];
 
-    const raw: AnalyticsResponse = await res.json();
+  const weeklyData = [
+    { day: "Mon", rooms: 8, avg: 42 },
+    { day: "Tue", rooms: 7, avg: 38 },
+    { day: "Wed", rooms: 8, avg: 45 },
+    { day: "Thu", rooms: 6, avg: 35 },
+    { day: "Fri", rooms: 5, avg: 28 },
+  ];
 
-    // 🧠 mapping data dari IoT → format chart
-    const hourly: HourlyData[] = raw.data.map((item: IoTData) => ({
-      time: new Date(item.timestamp).toLocaleTimeString("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      occupancy: item.occupancy,
-      temp: item.temperature,
-    }));
-
-    // contoh weekly aggregation (simple)
-    const weekly: WeeklyData[] = aggregateWeekly();
-
-    return NextResponse.json({ hourly, weekly });
-
-  } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Failed to fetch data" }, { status: 500 });
-  }
-}
-
-// 🔥 helper untuk weekly
-function aggregateWeekly(): WeeklyData[] {
-  const days = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-
-  return days.map((day) => ({
-    day,
-    rooms: Math.floor(Math.random() * 25),
-    avg: Math.floor(Math.random() * 400),
-  }));
+  return NextResponse.json({
+    success: true,
+    hourly: hourlyData,
+    weekly: weeklyData,
+  });
 }
