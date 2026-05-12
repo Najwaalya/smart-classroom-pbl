@@ -1,11 +1,22 @@
 import { CosmosClient } from "@azure/cosmos";
 
+// Ensure environment variables are loaded
+const endpoint = process.env.COSMOS_ENDPOINT;
+const key = process.env.COSMOS_KEY;
+const databaseId = process.env.COSMOS_DATABASE || "smartclassdb";
+
+if (!endpoint || !key) {
+  throw new Error(
+    "COSMOS_ENDPOINT and COSMOS_KEY must be set in environment variables"
+  );
+}
+
 const client = new CosmosClient({
-  endpoint: process.env.COSMOS_ENDPOINT!,
-  key: process.env.COSMOS_KEY!,
+  endpoint,
+  key,
 });
 
-const database = client.database("smartclassroomdb");
+const database = client.database(databaseId);
 
 export const bookingContainer =
   database.container("bookings");

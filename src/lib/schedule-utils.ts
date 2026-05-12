@@ -49,12 +49,22 @@ export function toMin(t: string): number {
 export function getRoomsForFloor(floor: string, schedules: any[]): string[] {
   const suffixes = FLOOR_SUFFIX[floor] ?? [];
   return Array.from(new Set(
-    schedules.filter(s => suffixes.some(sfx => s.room.endsWith(sfx))).map(s => s.room)
+    schedules
+      .filter(s => {
+        const roomName = s.roomId || s.room || "";
+        return suffixes.some(sfx => roomName.endsWith(sfx));
+      })
+      .map(s => s.roomId || s.room || "")
+      .filter(Boolean) // Remove empty strings
   )).sort();
 }
 
 export function getAllRooms(schedules: any[]): string[] {
-  return Array.from(new Set(schedules.map(s => s.room))).sort();
+  return Array.from(new Set(
+    schedules
+      .map(s => s.roomId || s.room || "")
+      .filter(Boolean) // Remove empty strings
+  )).sort();
 }
 
 export function getScheduleForSlot(
@@ -63,10 +73,17 @@ export function getScheduleForSlot(
   slot: typeof TIME_SLOTS[0],
   schedules: any[]
 ) {
-  return schedules.find(s =>
-    s.room === roomId && s.day === day &&
-    toMin(s.start) < toMin(slot.end) && toMin(s.end) > toMin(slot.start)
-  ) ?? null;
+  return schedules.find(s => {
+    const scheduleRoom = s.roomId || s.room || "";
+    const scheduleDay = s.day || "";
+    const scheduleStart = s.startTime || s.start || "";
+    const scheduleEnd = s.endTime || s.end || "";
+    
+    return scheduleRoom === roomId && 
+           scheduleDay === day &&
+           toMin(scheduleStart) < toMin(slot.end) && 
+           toMin(scheduleEnd) > toMin(slot.start);
+  }) ?? null;
 }
 
 export function slotInRange(slot: typeof TIME_SLOTS[0], startTime: string, endTime: string): boolean {
@@ -81,11 +98,25 @@ export function checkConflict(
   schedules: any[]
 ): string | null {
   if (toMin(startTime) >= toMin(endTime)) return "Jam selesai harus lebih dari jam mulai.";
-  const conflict = schedules.find(s =>
-    s.room === roomId && s.day === day &&
-    toMin(startTime) < toMin(s.end) && toMin(endTime) > toMin(s.start)
-  );
-  if (conflict) return `Bentrok dengan jadwal kelas ${conflict.start}–${conflict.end}.`;
+  
+  const conflict = schedules.find(s => {
+    const scheduleRoom = s.roomId || s.room || "";
+    const scheduleDay = s.day || "";
+    const scheduleStart = s.startTime || s.start || "";
+    const scheduleEnd = s.endTime || s.end || "";
+    
+    return scheduleRoom === roomId && 
+           scheduleDay === day &&
+           toMin(startTime) < toMin(scheduleEnd) && 
+           toMin(endTime) > toMin(scheduleStart);
+  });
+  
+  if (conflict) {
+    const conflictStart = conflict.startTime || conflict.start || "";
+    const conflictEnd = conflict.endTime || conflict.end || "";
+    return `Bentrok dengan jadwal kelas ${conflictStart}–${conflictEnd}.`;
+  }
+  
   return null;
 }
 

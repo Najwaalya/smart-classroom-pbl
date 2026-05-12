@@ -22,11 +22,13 @@ interface SidebarProps {
 export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
 
-  // ROLE STATE
-  const [setRole] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
-  // GET ROLE FROM CLIENT
-  const [role] = useState <string | null>(() => getRole());
+  useEffect(() => {
+    setMounted(true);
+    setRole(getRole());
+  }, []);
 
   // NAVIGATION ITEMS
   const navItems = [
@@ -42,7 +44,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
     },
 
     // MENU KHUSUS MAHASISWA
-    ...(role === "mahasiswa"
+    ...(mounted && role === "mahasiswa"
       ? [
           {
             name: "Booking Ruangan",
@@ -52,8 +54,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         ]
       : []),
 
-    // MENU KHUSUS DOSEN
-    ...(role === "dosen"
+    // MENU KHUSUS ADMIN/DOSEN
+    ...(mounted && role === "admin"
       ? [
           {
             name: "Kelola Jadwal",

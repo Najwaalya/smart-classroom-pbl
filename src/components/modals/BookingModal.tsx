@@ -183,10 +183,10 @@ export function BookingModal({ roomId, isOpen, onClose }: Props) {
           <button onClick={onClose} className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400"><X size={16} /></button>
         </div>
 
-        <form onSubmit={e => {
+        <form onSubmit={async e => {
             e.preventDefault();
             if (conflict) return;
-            const ok = bookRoom(roomId, startTime, endTime, useCustom ? custom.trim() : purpose, groupSize);
+            const ok = await bookRoom(roomId, startTime, endTime, useCustom ? custom.trim() : purpose, groupSize);
             if (ok) setSuccess(true);
           }}
           className="p-5 flex flex-col gap-5 max-h-[80vh] overflow-y-auto">

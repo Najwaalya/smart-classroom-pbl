@@ -36,16 +36,23 @@ export default function Login() {
   const [loginError, setLoginError] =
     useState(false);
 
-  // LOGIN
-  function handleSubmit(
+  const [isLoading, setIsLoading] =
+    useState(false);
+
+  // LOGIN — async karena fungsi login sekarang memanggil API Cosmos
+  async function handleSubmit(
     e: React.FormEvent
   ) {
     e.preventDefault();
+    setIsLoading(true);
+    setLoginError(false);
 
-    const user = login(
+    const user = await login(
       identifier,
       password
     );
+
+    setIsLoading(false);
 
     // LOGIN GAGAL
     if (!user) {
@@ -252,9 +259,10 @@ export default function Login() {
               {/* BUTTON */}
               <button
                 type="submit"
-                className={styles.submitBtn}
+                disabled={isLoading}
+                className={`${styles.submitBtn} ${isLoading ? "opacity-70 cursor-not-allowed" : ""}`}
               >
-                Sign In
+                {isLoading ? "Memverifikasi..." : "Sign In"}
               </button>
             </form>
 
