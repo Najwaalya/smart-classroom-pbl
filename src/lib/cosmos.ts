@@ -8,13 +8,13 @@ const client = new CosmosClient({
 const database = client.database("smartclassroomdb");
 
 export const bookingContainer =
-  database.container("booking");
+  database.container("bookings");
 
 export const sessionContainer =
-  database.container("sessions");
+  database.container("class_sessions");
 
 export const statusLogContainer =
-  database.container("statuslogs");
+  database.container("room_status_logs");
 
 export const roomContainer =
   database.container("rooms");
@@ -23,7 +23,7 @@ export const scheduleContainer =
   database.container("schedules");
 
 export const sensorContainer =
-  database.container("sensors");
+  database.container("sensors_readings");
 
 export const userContainer =
   database.container("users");

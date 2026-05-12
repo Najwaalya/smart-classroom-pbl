@@ -1,51 +1,133 @@
 import { NextResponse } from "next/server";
+
 import {
-  bookingContainer,
   sensorContainer,
-  roomContainer,
 } from "@/lib/cosmos";
+
+interface SensorData {
+  id: string;
+  roomId: string;
+  temperature: number;
+  humidity: number;
+  peopleCount: number;
+  motionCount: number;
+  motionDuration: number;
+  roomStatus: string;
+  ledStatus: string;
+  timestamp: string;
+}
 
 export async function GET() {
 
   try {
 
-    const bookings = await bookingContainer.items
-      .query("SELECT * FROM c")
-      .fetchAll();
+    const { resources } =
+      await sensorContainer.items
+        .query<SensorData>(`
+          SELECT * FROM c
+          ORDER BY c.timestamp DESC
+        `)
+        .fetchAll();
 
-    const sensors = await sensorContainer.items
-      .query("SELECT * FROM c")
-      .fetchAll();
+    // =====================================
+    // HOURLY
+    // =====================================
 
-    const rooms = await roomContainer.items
-      .query("SELECT * FROM c")
-      .fetchAll();
+    const hourly = resources
+      .slice(0, 10)
+      .map((item) => ({
 
-    const analytics = {
-      totalBookings:
-        bookings.resources.length,
+        time:
+          new Date(item.timestamp)
+            .toLocaleTimeString(
+              "id-ID",
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+              }
+            ),
 
-      totalRooms:
-        rooms.resources.length,
+        occupancy:
+          item.peopleCount || 0,
 
-      activeRooms:
-        sensors.resources.filter(
-          (s) => s.roomStatus === "OCCUPIED"
-        ).length,
+        temp:
+          item.temperature || 0,
+      }));
 
-      latestSensors:
-        sensors.resources.slice(0, 10),
-    };
+    // =====================================
+    // WEEKLY REAL DATA
+    // =====================================
 
-    return NextResponse.json(analytics);
+    const weeklyMap: Record<
+      string,
+      {
+        totalPeople: number;
+        totalRooms: number;
+        count: number;
+      }
+    > = {};
+
+    resources.forEach((item) => {
+
+      const day =
+        new Date(item.timestamp)
+          .toLocaleDateString(
+            "id-ID",
+            {
+              weekday: "short",
+            }
+          );
+
+      if (!weeklyMap[day]) {
+
+        weeklyMap[day] = {
+          totalPeople: 0,
+          totalRooms: 0,
+          count: 0,
+        };
+      }
+
+      weeklyMap[day].totalPeople +=
+        item.peopleCount || 0;
+
+      weeklyMap[day].totalRooms += 1;
+
+      weeklyMap[day].count += 1;
+    });
+
+    const weekly = Object.entries(weeklyMap)
+      .map(([day, value]) => ({
+
+        day,
+
+        rooms:
+          value.totalRooms,
+
+        avg:
+          Math.round(
+            value.totalPeople /
+            value.count
+          ),
+      }));
+
+    return NextResponse.json({
+      sensors: resources,
+      hourly,
+      weekly,
+    });
 
   } catch (error) {
 
     console.error(error);
 
     return NextResponse.json(
-      { error: "Failed to fetch analytics" },
-      { status: 500 }
+      {
+        error:
+          "Failed fetch analytics",
+      },
+      {
+        status: 500,
+      }
     );
   }
 }
