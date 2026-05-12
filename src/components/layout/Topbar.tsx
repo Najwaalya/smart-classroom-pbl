@@ -49,17 +49,11 @@ export function Topbar({
   const [isProfileOpen, setProfileOpen] =
     useState(false);
 
-  const [userInfo, setUserInfo] = useState<{
+  const [userInfo] = useState<{
     name: string;
     id: string;
     role: string;
-  } | null>(null);
-
-  // Load user info on mount
-  useEffect(() => {
-    const info = getUserInfo();
-    setUserInfo(info);
-  }, []);
+  } | null>(() => getUserInfo());
 
   const dropdownRef =
     useRef<HTMLDivElement>(null);

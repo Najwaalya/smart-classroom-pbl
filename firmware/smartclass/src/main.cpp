@@ -1,190 +1,579 @@
 #include <WiFi.h>
-#include "DHTesp.h"
+#include <WiFiClientSecure.h>
+#include <ArduinoJson.h>
+#include <DHTesp.h>
+#include <PubSubClient.h>
 
-// ================= WIFI =================
-const char* ssid = "";
-const char* password = "";
+// =====================================================
+// PIN DEFINITIONS
+// =====================================================
+#define IR1_PIN      18
+#define IR2_PIN      19
+#define PIR_PIN       2
+#define RED_PIN       5
+#define GREEN_PIN     4
+#define DHT_PIN      17
 
-// ================= PIN =================
-const int ir1 = 18;
-const int ir2 = 19;
-const int pirPin = 2;
+// =====================================================
+// WIFI CONFIGURATION
+// =====================================================
+const char* WIFI_SSID = "HURA HURA";
+const char* WIFI_PASSWORD = "sarinanda";
 
-const int ledPin = 5;
+// =====================================================
+// AZURE IOT HUB CONFIGURATION
+// =====================================================
+const char* MQTT_BROKER = "iothub-smart-classroom.azure-devices.net";
+const int MQTT_PORT = 8883;
 
-// ================= DHT =================
+const char* DEVICE_ID = "esp32-smartclass-ti3b";
+
+// =====================================================
+// SAS TOKEN
+// =====================================================
+const char* SAS_TOKEN =
+"SharedAccessSignature sr=iothub-smart-classroom.azure-devices.net%2Fdevices%2Fesp32-smartclass-ti3b&sig=NxWKU%2BGuBxTBFb8Myf6BLJhTY10P6ISF0UBVWDZ7iOI%3D&se=1778601599";
+
+// =====================================================
+// MQTT CLIENT
+// =====================================================
+WiFiClientSecure espClient;
+PubSubClient mqttClient(espClient);
+
+// =====================================================
+// DHT SENSOR
+// =====================================================
 DHTesp dht;
-const int DHT_PIN = 17;
 
-// ================= VARIABLE =================
+// =====================================================
+// SENSOR DATA
+// =====================================================
+float temperature = 0.0;
+float humidity = 0.0;
+
 int peopleCount = 0;
-bool countChanged = false;
 
-// IR state
+int motionCount = 0;
+float motionDuration = 0.0;
+
+// =====================================================
+// PIR VARIABLES
+// =====================================================
+bool lastMotion = LOW;
+
+unsigned long motionStart = 0;
+unsigned long lastMotionTime = 0;
+
+const unsigned long motionCooldown = 3000;
+
+// =====================================================
+// PEOPLE COUNT VARIABLES
+// =====================================================
 int state = 0;
+
 unsigned long stateTime = 0;
 const unsigned long timeout = 3000;
 
-// DHT timing
-unsigned long lastRead = 0;
-
-// debounce IR
 unsigned long lastTriggerTime = 0;
 const unsigned long debounceDelay = 300;
 
-// ================= PIR ADVANCED =================
-bool lastMotion = LOW;
-int motionCount = 0;
+// =====================================================
+// TIMING
+// =====================================================
+unsigned long lastSend = 0;
+const unsigned long sendInterval = 5000;
 
-unsigned long motionStart = 0;
-float motionDuration = 0;
+unsigned long lastMqttReconnect = 0;
+const unsigned long mqttReconnectInterval = 5000;
 
-bool isMotionActive = false;
+// =====================================================
+// FUNCTION DECLARATIONS
+// =====================================================
+void initializePins();
+void connectWiFi();
+void connectMqtt();
+void reconnectMqtt();
+void mqttCallback(char* topic, byte* payload, unsigned int length);
 
-// ================= WIFI =================
-void connectWiFi() {
-  WiFi.begin(ssid, password);
+void readDHT();
+void updateLED();
+void sendTelemetry();
 
-  Serial.print("Connecting WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
+// =====================================================
+// INITIALIZE PINS
+// =====================================================
+void initializePins() {
 
-  Serial.println("\nWiFi Connected!");
-}
+  pinMode(IR1_PIN, INPUT);
+  pinMode(IR2_PIN, INPUT);
+  pinMode(PIR_PIN, INPUT);
 
-// ================= SETUP =================
-void setup() {
-  Serial.begin(115200);
+  pinMode(RED_PIN, OUTPUT);
+  pinMode(GREEN_PIN, OUTPUT);
 
-  pinMode(ir1, INPUT);
-  pinMode(ir2, INPUT);
-  pinMode(pirPin, INPUT);
-
-  pinMode(ledPin, OUTPUT);
+  digitalWrite(RED_PIN, LOW);
+  digitalWrite(GREEN_PIN, HIGH);
 
   dht.setup(DHT_PIN, DHTesp::DHT11);
-
-  // connectWiFi(); // aktifkan kalau mau online
 }
 
-// ================= LOOP =================
-void loop() {
+// =====================================================
+// CONNECT WIFI
+// =====================================================
+void connectWiFi() {
 
-  // ===== BACA SENSOR =====
-  bool outside = digitalRead(ir1) == LOW;
-  bool inside  = digitalRead(ir2) == LOW;
-  bool motion  = digitalRead(pirPin);
+  Serial.print("[WiFi] Connecting to ");
+  Serial.println(WIFI_SSID);
 
-  // ===== PIR ADVANCED =====
-  if (motion == HIGH && lastMotion == LOW) {
-    Serial.println("🚶 Gerakan MULAI");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-    motionCount++;
-    motionStart = millis();
-    isMotionActive = true;
+  int attempts = 0;
+
+  while (WiFi.status() != WL_CONNECTED && attempts < 40) {
+
+    delay(500);
+    Serial.print(".");
+
+    attempts++;
   }
 
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+
+    Serial.println("[WiFi] Connected!");
+    Serial.print("[WiFi] IP Address: ");
+    Serial.println(WiFi.localIP());
+
+  } else {
+
+    Serial.println("[WiFi] Failed. Restarting...");
+    delay(3000);
+
+    ESP.restart();
+  }
+}
+
+// =====================================================
+// MQTT CALLBACK
+// =====================================================
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+
+  Serial.print("[MQTT] Message received on topic: ");
+  Serial.println(topic);
+
+  Serial.print("[MQTT] Payload: ");
+
+  for (unsigned int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+
+  Serial.println();
+}
+
+// =====================================================
+// CONNECT AZURE IOT HUB
+// =====================================================
+void connectMqtt() {
+
+  Serial.println();
+  Serial.println("[Azure] Connecting to Azure IoT Hub...");
+
+  // Untuk testing
+  espClient.setInsecure();
+
+  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+  mqttClient.setCallback(mqttCallback);
+  mqttClient.setBufferSize(1024);
+
+  // Username Azure
+  String username =
+    String(MQTT_BROKER) +
+    "/" +
+    String(DEVICE_ID) +
+    "/?api-version=2021-04-12";
+
+  // Client ID HARUS sama dengan Device ID
+  String clientId = String(DEVICE_ID);
+
+  Serial.print("[Azure] Device ID : ");
+  Serial.println(DEVICE_ID);
+
+  Serial.println("[Azure] Connecting MQTT...");
+
+  bool connected = mqttClient.connect(
+    clientId.c_str(),
+    username.c_str(),
+    SAS_TOKEN
+  );
+
+  if (connected) {
+
+    Serial.println("[Azure] Connected!");
+
+    String subscribeTopic =
+      "devices/" +
+      String(DEVICE_ID) +
+      "/messages/devicebound/#";
+
+    mqttClient.subscribe(subscribeTopic.c_str());
+
+    Serial.print("[Azure] Subscribed: ");
+    Serial.println(subscribeTopic);
+
+  } else {
+
+    Serial.print("[Azure] MQTT Failed. State: ");
+    Serial.println(mqttClient.state());
+  }
+}
+
+// =====================================================
+// MQTT RECONNECT
+// =====================================================
+void reconnectMqtt() {
+
+  if (!mqttClient.connected()) {
+
+    unsigned long now = millis();
+
+    if (now - lastMqttReconnect >= mqttReconnectInterval) {
+
+      lastMqttReconnect = now;
+
+      connectMqtt();
+    }
+  }
+}
+
+// =====================================================
+// READ DHT
+// =====================================================
+void readDHT() {
+
+  TempAndHumidity data = dht.getTempAndHumidity();
+
+  if (!isnan(data.temperature) && !isnan(data.humidity)) {
+
+    temperature = data.temperature;
+    humidity = data.humidity;
+
+  } else {
+
+    Serial.println("[DHT] Failed reading sensor");
+  }
+}
+
+// =====================================================
+// UPDATE LED
+// =====================================================
+void updateLED() {
+
+  if (peopleCount > 0) {
+
+    digitalWrite(RED_PIN, HIGH);
+    digitalWrite(GREEN_PIN, LOW);
+
+  } else {
+
+    digitalWrite(RED_PIN, LOW);
+    digitalWrite(GREEN_PIN, HIGH);
+  }
+}
+
+// =====================================================
+// SEND TELEMETRY
+// =====================================================
+void sendTelemetry() {
+
+  if (!mqttClient.connected()) {
+
+    Serial.println("[Telemetry] MQTT disconnected");
+    return;
+  }
+
+  // =========================================
+  // ROOM STATUS
+  // =========================================
+  String roomStatus = "EMPTY";
+
+  if (peopleCount > 0) {
+    roomStatus = "ACTIVE";
+  }
+
+  // =========================================
+  // CREATE JSON
+  // =========================================
+  StaticJsonDocument<512> doc;
+
+  doc["device_id"] = DEVICE_ID;
+  doc["room"] = "RT_5B";
+
+  doc["temperature"] = temperature;
+  doc["humidity"] = humidity;
+
+  doc["people_count"] = peopleCount;
+
+  doc["motion_count"] = motionCount;
+  doc["motion_duration"] = motionDuration;
+
+  doc["room_status"] = roomStatus;
+
+  doc["led_status"] =
+    (peopleCount > 0)
+    ? "RED"
+    : "GREEN";
+
+  // =========================================
+  // SERIALIZE JSON
+  // =========================================
+  char payload[512];
+
+  serializeJson(doc, payload, sizeof(payload));
+
+  // =========================================
+  // VERY IMPORTANT
+  // SEND AS JSON TO AZURE
+  // =========================================
+  String topic =
+    "devices/" +
+    String(DEVICE_ID) +
+    "/messages/events/$.ct=application%2Fjson&$.ce=utf-8";
+
+  Serial.println();
+  Serial.println("[Telemetry] Sending JSON:");
+  Serial.println(payload);
+
+  bool published =
+    mqttClient.publish(
+      topic.c_str(),
+      payload
+    );
+
+  if (published) {
+
+    Serial.println("[Telemetry] SUCCESS");
+
+  } else {
+
+    Serial.println("[Telemetry] FAILED");
+  }
+}
+
+// =====================================================
+// SETUP
+// =====================================================
+void setup() {
+
+  Serial.begin(115200);
+
+  delay(1000);
+
+  Serial.println();
+  Serial.println("=================================");
+  Serial.println(" SMART CLASSROOM MONITORING");
+  Serial.println(" ESP32 -> AZURE IOT HUB");
+  Serial.println("=================================");
+
+  initializePins();
+
+  Serial.println("[System] Pins initialized");
+
+  connectWiFi();
+  connectMqtt();
+
+  Serial.println("[System] Setup complete");
+}
+
+// =====================================================
+// MAIN LOOP
+// =====================================================
+void loop() {
+
+  // =========================================
+  // WIFI CHECK
+  // =========================================
+  if (WiFi.status() != WL_CONNECTED) {
+
+    Serial.println("[WiFi] Reconnecting...");
+    connectWiFi();
+  }
+
+  // =========================================
+  // MQTT CHECK
+  // =========================================
+  if (!mqttClient.connected()) {
+
+    reconnectMqtt();
+
+  } else {
+
+    mqttClient.loop();
+  }
+
+  // =========================================
+  // SENSOR READ
+  // =========================================
+  bool outside = (digitalRead(IR1_PIN) == LOW);
+  bool inside  = (digitalRead(IR2_PIN) == LOW);
+
+  bool motion = digitalRead(PIR_PIN);
+
+  // =========================================
+  // PIR MOTION DETECTION
+  // =========================================
+  if (
+    motion == HIGH &&
+    lastMotion == LOW &&
+    millis() - lastMotionTime > motionCooldown
+  ) {
+
+    Serial.println("[PIR] Motion detected");
+
+    motionCount++;
+
+    motionStart = millis();
+    lastMotionTime = millis();
+  }
+
+  // Motion stopped
   if (motion == LOW && lastMotion == HIGH) {
-    Serial.println("🛑 Gerakan BERHENTI");
 
-    motionDuration = (millis() - motionStart) / 1000.0;
+    motionDuration =
+      (millis() - motionStart) / 1000.0;
 
-    Serial.print("Durasi Gerakan: ");
+    Serial.print("[PIR] Motion duration: ");
     Serial.print(motionDuration);
-    Serial.println(" detik");
-
-    Serial.println("===== DATA PIR =====");
-    Serial.print("Total Gerakan: ");
-    Serial.println(motionCount);
-    Serial.print("Durasi Terakhir: ");
-    Serial.print(motionDuration);
-    Serial.println(" detik");
-    Serial.println("====================");
-
-    isMotionActive = false;
+    Serial.println(" sec");
   }
 
   lastMotion = motion;
 
-  // ===== STATE MACHINE IR =====
+  // =========================================
+  // PEOPLE COUNT
+  // =========================================
   if (millis() - lastTriggerTime > debounceDelay) {
 
+    // WAITING
     if (state == 0) {
+
       if (outside) {
+
         state = 1;
         stateTime = millis();
+
         lastTriggerTime = millis();
-      } 
+
+        Serial.println("[IR] IR1 first");
+      }
+
       else if (inside) {
+
         state = 2;
         stateTime = millis();
+
         lastTriggerTime = millis();
+
+        Serial.println("[IR] IR2 first");
       }
     }
 
+    // MASUK
     else if (state == 1 && inside) {
+
       peopleCount++;
-      countChanged = true;
-      Serial.println("Orang MASUK");
+
+      Serial.println("[People] ENTER");
+
+      Serial.print("[People] Total: ");
+      Serial.println(peopleCount);
+
       state = 0;
+
       lastTriggerTime = millis();
     }
 
+    // KELUAR
     else if (state == 2 && outside) {
-      if (peopleCount > 0) peopleCount--;
-      countChanged = true;
-      Serial.println("Orang KELUAR");
+
+      if (peopleCount > 0) {
+        peopleCount--;
+      }
+
+      Serial.println("[People] EXIT");
+
+      Serial.print("[People] Total: ");
+      Serial.println(peopleCount);
+
       state = 0;
+
       lastTriggerTime = millis();
     }
   }
 
-  // ===== TIMEOUT RESET =====
-  if (state != 0 && millis() - stateTime > timeout) {
-    Serial.println("RESET STATE (TIMEOUT)");
+  // =========================================
+  // TIMEOUT RESET
+  // =========================================
+  if (
+    state != 0 &&
+    millis() - stateTime > timeout
+  ) {
+
+    Serial.println("[IR] Timeout reset");
+
     state = 0;
   }
 
-  // ===== OUTPUT PEOPLE COUNT =====
-  if (countChanged) {
-    Serial.println("\n===== PEOPLE COUNT =====");
-    Serial.print("Jumlah Orang: ");
+  // =========================================
+  // UPDATE LED
+  // =========================================
+  updateLED();
+
+  // =========================================
+  // SEND DATA EVERY 5 SECONDS
+  // =========================================
+  if (millis() - lastSend >= sendInterval) {
+
+    lastSend = millis();
+
+    readDHT();
+
+    Serial.println();
+    Serial.println("=================================");
+    Serial.println(" SMART CLASS STATUS");
+    Serial.println("=================================");
+
+    Serial.print("People Count : ");
     Serial.println(peopleCount);
-    Serial.println("========================\n");
 
-    countChanged = false;
-  }
+    Serial.print("Motion Count : ");
+    Serial.println(motionCount);
 
-  // ===== BACA DHT =====
-  if (millis() - lastRead > 5000) {
+    Serial.print("Motion Duration : ");
+    Serial.print(motionDuration);
+    Serial.println(" sec");
 
-    TempAndHumidity data = dht.getTempAndHumidity();
+    Serial.print("Temperature : ");
+    Serial.print(temperature);
+    Serial.println(" C");
 
-    if (isnan(data.temperature) || isnan(data.humidity)) {
-      Serial.println("Gagal baca DHT!");
+    Serial.print("Humidity : ");
+    Serial.print(humidity);
+    Serial.println(" %");
+
+    Serial.print("Room Status : ");
+
+    if (peopleCount > 0) {
+      Serial.println("ACTIVE");
     } else {
-      Serial.println("\n===== DATA SENSOR =====");
-      Serial.print("Suhu: ");
-      Serial.print(data.temperature);
-      Serial.println(" °C");
-
-      Serial.print("Kelembaban: ");
-      Serial.print(data.humidity);
-      Serial.println(" %");
-      Serial.println("======================\n");
+      Serial.println("EMPTY");
     }
 
-    lastRead = millis();
-  }
+    Serial.println("=================================");
 
-  // ===== LED (RGB 2 PIN) =====
-  if (peopleCount > 0) {
-    digitalWrite(ledPin, HIGH); // nyala
-  } else {
-    digitalWrite(ledPin, LOW);  // mati
+    sendTelemetry();
   }
 
   delay(50);
-}
+} 

@@ -58,7 +58,6 @@ export default function Analytics() {
   const { rooms } = useRoomData();
 
   useEffect(() => {
-    setMounted(true);
     const userRole = getRole();
     if (!userRole) {
       router.replace("/login");
