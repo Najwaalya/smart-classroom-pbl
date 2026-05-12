@@ -49,11 +49,17 @@ export function Topbar({
   const [isProfileOpen, setProfileOpen] =
     useState(false);
 
-  const [userInfo] = useState<{
+  const [userInfo, setUserInfo] = useState<{
     name: string;
     id: string;
     role: string;
-  } | null>(() => getUserInfo());
+  } | null>(null);
+
+  // Load user info on mount
+  useEffect(() => {
+    const info = getUserInfo();
+    setUserInfo(info);
+  }, []);
 
   const dropdownRef =
     useRef<HTMLDivElement>(null);
@@ -275,7 +281,7 @@ export function Topbar({
 
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                         {userInfo?.role === "admin"
-                          ? `NIP: ${userInfo.id}`
+                          ? `NIP: ${userInfo?.id}`
                           : `NIM: ${userInfo?.id}`}
                       </p>
 
@@ -287,8 +293,8 @@ export function Topbar({
                         }`}
                       >
                         {userInfo?.role === "admin"
-                          ? "Admin"
-                          : "Mahasiswa"}
+                          ? "DOSEN"
+                          : "MAHASISWA"}
                       </span>
                     </div>
                   </div>
