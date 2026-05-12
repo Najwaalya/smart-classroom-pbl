@@ -2,8 +2,6 @@
 
 import { TIME_SLOTS, toMin, getDayLabel } from "@/lib/schedule-utils";
 import { RoomStatusBadge } from "./RoomStatusBadge";
-import { Clock, Info, AlertTriangle, X } from "lucide-react";
-import { useState } from "react";
 
 export interface ScheduleGridProps {
   rooms: string[];
@@ -27,11 +25,6 @@ export function ScheduleGrid({
   getBoxColor,
   getRoomStatus,
 }: ScheduleGridProps) {
-  const [detail, setDetail] = useState<{
-    roomId: string;
-    slot: typeof TIME_SLOTS[0];
-  } | null>(null);
-
   return (
     <>
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -73,15 +66,14 @@ export function ScheduleGrid({
                     onClick={() => {
                       if (box.clickable && onSlotDetail) {
                         onSlotDetail(room, selectedDay, slot);
-                      } else {
-                        setDetail({ roomId: room, slot });
                       }
+                      // Tidak ada aksi untuk slot yang tidak clickable (merah/abu-abu)
                     }}
                     className={`
                       w-full aspect-square rounded-xl border-2 flex items-center justify-center
                       text-white text-[8px] font-black transition-all duration-200
                       ${box.bg}
-                      ${box.clickable ? "cursor-pointer hover:opacity-80 hover:scale-105 active:scale-95" : "cursor-default"}
+                      ${box.clickable ? "cursor-pointer hover:opacity-80 hover:scale-105 active:scale-95" : "cursor-not-allowed opacity-90"}
                     `}
                   >
                     {box.label}
@@ -92,32 +84,6 @@ export function ScheduleGrid({
           ))}
         </div>
       </div>
-
-      {/* Detail slot modal simple */}
-      {detail && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setDetail(null)} />
-          <div className="relative bg-white w-full max-w-sm rounded-2xl shadow-2xl p-5">
-            <button
-              onClick={() => setDetail(null)}
-              className="absolute top-4 right-4 p-1 rounded-full hover:bg-slate-100 text-slate-400"
-            >
-              <X size={16} />
-            </button>
-            <div className="flex items-center gap-2 mb-4">
-              <Clock size={16} className="text-slate-600" />
-              <div>
-                <p className="text-sm font-black text-slate-800">{detail.roomId}</p>
-                <p className="text-[10px] text-slate-400">{getDayLabel(selectedDay)}</p>
-              </div>
-            </div>
-            <div className="text-center py-4">
-              <p className="text-xs text-slate-500">Slot kosong</p>
-              <p className="text-sm font-black text-slate-700 mt-1">{detail.slot.start} – {detail.slot.end}</p>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

@@ -9,6 +9,7 @@ import {
   X,
   CalendarDays,
   BookOpen,
+  Settings,
 } from "lucide-react";
 import { getRole } from "@/lib/auth";
 import { useState } from "react";
@@ -35,8 +36,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       ? [{ name: "Booking Ruangan", href: "/booking", icon: BookOpen }]
       : []),
 
-    ...(role === "dosen"
+    ...(role === "admin"
       ? [
+          { name: "Kelola Jadwal", href: "/manage-schedule", icon: Settings },
           { name: "Analitik", href: "/analytics", icon: LineChart },
           { name: "Riwayat", href: "/logs", icon: History },
         ]
