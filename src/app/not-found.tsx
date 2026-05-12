@@ -2,11 +2,15 @@
 
 import Link from "next/link";
 import { getRole } from "@/lib/auth";
+import { useEffect, useState } from "react";
 
 export default function NotFound() {
-  const role = getRole();
+  const [href, setHref] = useState("/login");
 
-  const href = role ? "/" : "/login";
+  useEffect(() => {
+    const role = getRole();
+    setHref(role ? "/" : "/login");
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--background-base)] gap-6 px-4">

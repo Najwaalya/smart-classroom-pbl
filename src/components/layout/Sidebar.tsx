@@ -12,7 +12,7 @@ import {
   Settings,
 } from "lucide-react";
 import { getRole } from "@/lib/auth";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface SidebarProps {
   open: boolean;
@@ -22,7 +22,13 @@ interface SidebarProps {
 export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
 
-  const [role] = useState<string | null>(() => getRole());
+  const [role, setRole] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    setRole(getRole());
+  }, []);
 
   // NAV ITEMS BASED ON ROLE
   const navItems = [
@@ -32,11 +38,11 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       href: "/schedule",
       icon: CalendarDays,
     },
-    ...(role === "mahasiswa"
+    ...(mounted && role === "mahasiswa"
       ? [{ name: "Booking Ruangan", href: "/booking", icon: BookOpen }]
       : []),
 
-    ...(role === "admin"
+    ...(mounted && role === "dosen"
       ? [
           { name: "Kelola Jadwal", href: "/manage-schedule", icon: Settings },
           { name: "Analitik", href: "/analytics", icon: LineChart },

@@ -7,6 +7,7 @@ import {
 import { Room } from "@/contexts/RoomDataContext";
 import { useBooking } from "@/contexts/BookingContext";
 import { getRole } from "@/lib/auth";
+import { useEffect, useState } from "react";
 
 interface RoomCardProps { room: Room; index: number; }
 
@@ -18,7 +19,14 @@ const STATUS_CFG = {
 
 export function RoomCard({ room, index }: RoomCardProps) {
   const { toggleFavorite, isFavorite } = useBooking();
-  const role    = typeof window !== "undefined" ? getRole() : null;
+  const [role, setRole] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    setRole(getRole());
+  }, []);
+
   const favorite = isFavorite(room.id);
   const cfg      = STATUS_CFG[room.status];
 

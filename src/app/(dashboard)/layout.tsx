@@ -9,12 +9,9 @@ import {
 import { useRouter } from "next/navigation";
 
 import { Sidebar } from "@/components/layout/Sidebar";
-
 import { Topbar } from "@/components/layout/Topbar";
-
 import { RoomDataProvider } from "@/contexts/RoomDataContext";
 import { BookingProvider } from "@/contexts/BookingContext";
-
 import { getRole } from "@/lib/auth";
 import { ToastContainer } from "@/components/ToastContainer";
 
@@ -23,13 +20,14 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-
   const router = useRouter();
   const hasCheckedRef = useRef(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  // CEK AUTH DAN REDIRECT
   useEffect(() => {
+    setMounted(true);
+
     if (hasCheckedRef.current) return;
     hasCheckedRef.current = true;
 
@@ -39,6 +37,16 @@ export default function DashboardLayout({
     }
   }, [router]);
 
+  // ── Sebelum mount: render shell yang SAMA antara server & client ──
+  // Ini mencegah hydration mismatch karena getRole() hanya bisa
+  // diakses di client (localStorage), bukan di server.
+  if (!mounted) {
+    return (
+      <div className="min-h-screen flex flex-col font-sans bg-[var(--background-base)]" />
+    );
+  }
+
+  // ── Setelah mount: cek role, redirect jika tidak login ──
   const role = getRole();
   if (!role) return null;
 
@@ -48,7 +56,7 @@ export default function DashboardLayout({
         <div className="min-h-screen flex flex-col font-sans bg-[var(--background-base)]">
           {/* TOPBAR */}
           <Topbar onMenuToggle={() => setSidebarOpen((prev) => !prev)} />
-          
+
           <div className="flex flex-1 pt-16">
             {/* SIDEBAR */}
             <Sidebar
@@ -61,7 +69,7 @@ export default function DashboardLayout({
               {children}
             </main>
           </div>
-          
+
           <ToastContainer />
         </div>
       </BookingProvider>

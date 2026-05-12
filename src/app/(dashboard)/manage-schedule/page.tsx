@@ -39,8 +39,8 @@ export default function ManageSchedulePage() {
   useEffect(() => {
     setMounted(true);
     const role = getRole();
-    // @ts-expect-error - TypeScript has issues with UserRole comparison, but this is correct
-    if (role !== "admin") {
+    // Hanya dosen yang bisa akses kelola jadwal
+    if (role !== "dosen") {
       router.replace("/");
     }
   }, [router]);
@@ -50,26 +50,27 @@ export default function ManageSchedulePage() {
     if (!mounted) return;
     
     try {
+      const defaultList: Schedule[] = defaultSchedules.map((s, idx) => ({
+        id: `default-${idx}`,
+        ...s,
+      }));
+
       const stored = localStorage.getItem("customSchedules");
       if (stored) {
-        const custom = JSON.parse(stored) as Schedule[];
-        // Combine default schedules with custom ones
-        const combined = [
-          ...defaultSchedules.map((s, idx) => ({
-            id: `default-${idx}`,
-            ...s,
-          })),
-          ...custom,
-        ];
-        setSchedules(combined);
+        const raw = JSON.parse(stored) as Partial<Schedule>[];
+        // Pastikan setiap custom entry punya field id (bisa tidak ada jika disimpan sistem baru)
+        const custom: Schedule[] = raw.map((s, idx) => ({
+          id: s.id ?? `custom-${Date.now()}-${idx}`,
+          room: s.room ?? "",
+          day: s.day ?? "Monday",
+          start: s.start ?? "",
+          end: s.end ?? "",
+          subject: s.subject,
+          lecturer: s.lecturer,
+        }));
+        setSchedules([...defaultList, ...custom]);
       } else {
-        // Use default schedules
-        setSchedules(
-          defaultSchedules.map((s, idx) => ({
-            id: `default-${idx}`,
-            ...s,
-          }))
-        );
+        setSchedules(defaultList);
       }
     } catch (err) {
       console.error("Failed to load schedules:", err);
@@ -78,7 +79,7 @@ export default function ManageSchedulePage() {
 
   // Save custom schedules to localStorage
   const saveSchedules = (newSchedules: Schedule[]) => {
-    const customOnly = newSchedules.filter(s => !s.id.startsWith("default-"));
+    const customOnly = newSchedules.filter(s => !s.id?.startsWith("default-"));
     localStorage.setItem("customSchedules", JSON.stringify(customOnly));
     setSchedules(newSchedules);
   };
@@ -114,7 +115,7 @@ export default function ManageSchedulePage() {
 
   // Delete schedule
   const handleDeleteSchedule = (id: string) => {
-    if (id.startsWith("default-")) {
+    if (id?.startsWith("default-")) {
       alert("Tidak bisa menghapus jadwal default. Hanya jadwal custom yang bisa dihapus.");
       return;
     }
@@ -334,13 +335,13 @@ export default function ManageSchedulePage() {
           <div className="p-4 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-2xl border border-emerald-200">
             <p className="text-xs font-black text-emerald-600 uppercase tracking-wider">Jadwal Custom</p>
             <p className="text-3xl font-black text-emerald-700 mt-1">
-              {schedules.filter(s => s.id.startsWith("custom-")).length}
+              {schedules.filter(s => s.id?.startsWith("custom-")).length}
             </p>
           </div>
           <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-2xl border border-purple-200">
             <p className="text-xs font-black text-purple-600 uppercase tracking-wider">Jadwal Default</p>
             <p className="text-3xl font-black text-purple-700 mt-1">
-              {schedules.filter(s => s.id.startsWith("default-")).length}
+              {schedules.filter(s => s.id?.startsWith("default-")).length}
             </p>
           </div>
         </div>
@@ -418,15 +419,15 @@ export default function ManageSchedulePage() {
                       </td>
                       <td className="px-6 py-4">
                         <span className={`inline-block px-2 py-1 rounded-full text-xs font-black ${
-                          schedule.id.startsWith("custom-")
+                          schedule.id?.startsWith("custom-")
                             ? "bg-emerald-100 text-emerald-700"
                             : "bg-purple-100 text-purple-700"
                         }`}>
-                          {schedule.id.startsWith("custom-") ? "Custom" : "Default"}
+                          {schedule.id?.startsWith("custom-") ? "Custom" : "Default"}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-center">
-                        {schedule.id.startsWith("custom-") ? (
+                        {schedule.id?.startsWith("custom-") ? (
                           <button
                             onClick={() => handleDeleteSchedule(schedule.id)}
                             className="p-2 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
