@@ -1,4 +1,4 @@
-export type UserRole = "dosen" | "mahasiswa";
+export type UserRole = "admin" | "mahasiswa";
 
 export type User = {
   email?: string;
@@ -14,7 +14,7 @@ const users: User[] = [
     email: "dosen@gmail.com",
     nip: "197805122005011002",
     password: "197805122005011002",
-    role: "dosen",
+    role: "admin",
     name: "Dr. Budi Santoso, M.T.",
   },
   {
@@ -27,8 +27,8 @@ const users: User[] = [
 
 export function login(identifier: string, password: string) {
   const user = users.find((u) => {
-    // Login dosen → email + NIP
-    if (u.role === "dosen") {
+    // Login admin → email + NIP
+    if (u.role === "admin") {
       return (
         u.email === identifier &&
         u.password === password
@@ -51,7 +51,7 @@ export function login(identifier: string, password: string) {
   localStorage.setItem("role", user.role);
   localStorage.setItem("userName", user.name);
 
-  if (user.role === "dosen") {
+  if (user.role === "admin") {
     localStorage.setItem("userId", user.nip || "");
   } else {
     localStorage.setItem("userId", user.nim || "");
@@ -62,7 +62,12 @@ export function login(identifier: string, password: string) {
 
 export function getRole(): UserRole | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("role") as UserRole | null;
+  const role = localStorage.getItem("role");
+  if (role === "dosen") {
+    localStorage.setItem("role", "admin");
+    return "admin";
+  }
+  return role as UserRole | null;
 }
 
 export function getUserInfo(): {

@@ -54,7 +54,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         ]
       : []),
 
-    // MENU KHUSUS ADMIN/DOSEN
+    // MENU KHUSUS ADMIN
     ...(mounted && role === "admin"
       ? [
           {
