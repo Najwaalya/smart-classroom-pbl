@@ -9,8 +9,6 @@ import {
 
 import useSWR from "swr";
 
-import { schedules } from "@/lib/schedule";
-
 import { useRoomData } from "@/contexts/RoomDataContext";
 
 import {
@@ -135,19 +133,41 @@ export default function BookingPage() {
   // =========================================
 
   const {
-    data: bookings = [],
+    data: bookingsData,
     mutate,
     isLoading,
-  } = useSWR<
-    BookingRecord[]
-  >(
+  } = useSWR<{ success: boolean; bookings: BookingRecord[] }>(
     "/api/bookings",
     fetcher,
     {
-      refreshInterval:
-        5000,
+      refreshInterval: 5000,
     }
   );
+
+  const bookings = useMemo(() => {
+    if (!bookingsData || !bookingsData.success) return [];
+    return Array.isArray(bookingsData.bookings) ? bookingsData.bookings : [];
+  }, [bookingsData]);
+
+  // =========================================
+  // FETCH SCHEDULES
+  // =========================================
+
+  const {
+    data: schedulesData,
+    isLoading: schedulesLoading,
+  } = useSWR<{ success: boolean; schedules: any[] }>(
+    "/api/schedules",
+    fetcher,
+    {
+      refreshInterval: 30000,
+    }
+  );
+
+  const schedules = useMemo(() => {
+    if (!schedulesData || !schedulesData.success) return [];
+    return Array.isArray(schedulesData.schedules) ? schedulesData.schedules : [];
+  }, [schedulesData]);
 
   // =========================================
   // INIT CLIENT DATA
@@ -178,15 +198,26 @@ export default function BookingPage() {
   // ROOMS BY FLOOR
   // =========================================
 
-  const roomsOnFloor =
-    useMemo(
-      () =>
-        getRoomsForFloor(
-          selectedFloor,
-          schedules
-        ),
-      [selectedFloor]
-    );
+  const roomsOnFloor = useMemo(() => {
+    // Jika schedules kosong atau tidak ada room yang match, gunakan rooms dari context
+    const roomsFromSchedules = getRoomsForFloor(selectedFloor, schedules);
+    
+    if (roomsFromSchedules.length > 0) {
+      return roomsFromSchedules;
+    }
+    
+    // Fallback: gunakan rooms dari RoomDataContext
+    const suffixes = ["_5B", "_6T", "_7T", "_7B", "_8T"];
+    const floorSuffix = selectedFloor === "5" ? "_5B" : 
+                        selectedFloor === "6" ? "_6T" :
+                        selectedFloor === "7" ? "_7" : // Match both _7T and _7B
+                        selectedFloor === "8" ? "_8T" : "";
+    
+    return rooms
+      .map(r => r.id)
+      .filter(id => floorSuffix && id.includes(floorSuffix))
+      .sort();
+  }, [selectedFloor, schedules, rooms]);
 
   // =========================================
   // FIND BOOKING SLOT
@@ -620,13 +651,13 @@ export default function BookingPage() {
   // LOADING
   // =========================================
 
-  if (isLoading) {
+  if (isLoading || schedulesLoading) {
 
     return (
       <div className="page-wrapper">
 
         <div className="py-10 text-sm text-slate-500">
-          Loading bookings...
+          Loading data...
         </div>
 
       </div>

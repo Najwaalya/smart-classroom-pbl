@@ -1,9 +1,11 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, {
+  createContext, useContext, useState, useCallback, useEffect, useRef,
+} from "react";
 import { getUserInfo } from "@/lib/auth";
 
-// ── Tipe ──────────────────────────────────────────────────────────────────
+// ── Tipe ──────────────────────────────────────────────────────────────────────
 
 export type ReportType = "mundur" | "ganti_hari" | "tidak_hadir" | "pindah_ruangan";
 
@@ -44,11 +46,12 @@ interface BookingContextType {
   bookingHistory: BookingEntry[];
   favorites: string[];
   toasts: Toast[];
+  dbSynced: boolean;
 
   reportReschedule: (roomId: string, type: ReportType, note: string, extra?: { newDay?: string; newTime?: string }) => void;
   cancelReschedule: (roomId: string) => void;
-  bookRoom: (roomId: string, startTime: string, endTime: string, purpose: string, groupSize: number) => boolean;
-  cancelBooking: (roomId: string) => void;
+  bookRoom: (roomId: string, startTime: string, endTime: string, purpose: string, groupSize: number) => Promise<boolean>;
+  cancelBooking: (roomId: string) => Promise<void>;
   rescheduleBooking: (roomId: string, newStart: string, newEnd: string) => boolean;
 
   toggleFavorite: (roomId: string) => void;
@@ -63,17 +66,21 @@ interface BookingContextType {
 
   addToast: (toast: Omit<Toast, "id">) => void;
   removeToast: (id: string) => void;
+  refreshBookings: () => Promise<void>;
 }
 
 const BookingContext = createContext<BookingContextType | undefined>(undefined);
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
 
 function loadLS<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
-  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+  try {
+    const v = localStorage.getItem(key);
+    return v ? JSON.parse(v) : fallback;
+  } catch { return fallback; }
 }
 
 function saveLS(key: string, value: unknown) {
@@ -81,23 +88,60 @@ function saveLS(key: string, value: unknown) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
 }
 
-// ── Provider ───────────────────────────────────────────────────────────────
+// Konversi data Cosmos ke BookingEntry internal
+interface CosmosBooking {
+  id: string;
+  roomId: string;
+  userId?: string;
+  userClass?: string;
+  bookingDate?: string;
+  day?: string;
+  sessionStart?: string;
+  sessionEnd?: string;
+  purpose?: string;
+  status?: string;
+  createdAt?: string;
+  // Bisa punya nama user dari client
+  bookedBy?: string;
+  bookedById?: string;
+  startTime?: string;
+  endTime?: string;
+  groupSize?: number;
+}
+
+function cosmosToEntry(b: CosmosBooking): BookingEntry {
+  return {
+    id: b.id,
+    roomId: b.roomId,
+    bookedBy: b.bookedBy ?? b.userId ?? "—",
+    bookedById: b.bookedById ?? b.userId ?? "",
+    bookedAt: b.createdAt ? new Date(b.createdAt) : new Date(),
+    startTime: b.startTime ?? b.sessionStart ?? "",
+    endTime: b.endTime ?? b.sessionEnd ?? "",
+    purpose: b.purpose ?? "",
+    groupSize: b.groupSize ?? 0,
+    status: (b.status as BookingEntry["status"]) ?? "active",
+  };
+}
+
+// ── Provider ──────────────────────────────────────────────────────────────────
 
 export function BookingProvider({ children }: { children: React.ReactNode }) {
-  const [reschedules,    setReschedules]    = useState<Record<string, RescheduleReport>>({});
-  const [bookings,       setBookings]       = useState<Record<string, BookingEntry>>({});
+  const [reschedules, setReschedules] = useState<Record<string, RescheduleReport>>({});
+  const [bookings,    setBookings]    = useState<Record<string, BookingEntry>>({});
   const [bookingHistory, setBookingHistory] = useState<BookingEntry[]>(() =>
     loadLS<BookingEntry[]>("booking_history", []).map(b => ({ ...b, bookedAt: new Date(b.bookedAt) }))
   );
   const [favorites, setFavorites] = useState<string[]>(() => loadLS<string[]>("room_favorites", []));
   const [toasts,    setToasts]    = useState<Toast[]>([]);
+  const [dbSynced,  setDbSynced]  = useState(false);
+  const hasFetchedRef = useRef(false);
 
-  // Persist favorites & history
-  useEffect(() => { saveLS("room_favorites",   favorites);      }, [favorites]);
-  useEffect(() => { saveLS("booking_history",  bookingHistory); }, [bookingHistory]);
+  // ── Persist ke localStorage ──────────────────────────────────────────────
+  useEffect(() => { saveLS("room_favorites",  favorites);      }, [favorites]);
+  useEffect(() => { saveLS("booking_history", bookingHistory); }, [bookingHistory]);
 
-  // ── Toast ──────────────────────────────────────────────────────────────
-
+  // ── Toast ─────────────────────────────────────────────────────────────────
   const addToast = useCallback((toast: Omit<Toast, "id">) => {
     const id = uid();
     setToasts(prev => [...prev, { ...toast, id }]);
@@ -108,8 +152,39 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  // ── Reschedule Report ──────────────────────────────────────────────────
+  // ── Fetch bookings dari Cosmos ────────────────────────────────────────────
+  const refreshBookings = useCallback(async () => {
+    try {
+      const res  = await fetch("/api/bookings");
+      const data = await res.json();
 
+      if (Array.isArray(data)) {
+        const entries = data.map(cosmosToEntry);
+
+        // Bangun map roomId → BookingEntry (hanya status active)
+        const activeMap: Record<string, BookingEntry> = {};
+        for (const e of entries) {
+          if (e.status === "active") activeMap[e.roomId] = e;
+        }
+
+        setBookings(activeMap);
+        setBookingHistory(entries.slice(0, 50));
+        setDbSynced(true);
+      }
+    } catch {
+      // Cosmos offline — pakai localStorage
+      setDbSynced(false);
+    }
+  }, []);
+
+  // Load bookings saat mount (satu kali)
+  useEffect(() => {
+    if (hasFetchedRef.current) return;
+    hasFetchedRef.current = true;
+    refreshBookings();
+  }, [refreshBookings]);
+
+  // ── Reschedule Report ─────────────────────────────────────────────────────
   const reportReschedule = useCallback((
     roomId: string, type: ReportType, note: string,
     extra?: { newDay?: string; newTime?: string }
@@ -130,31 +205,90 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
     addToast({ type: "info", title: "Laporan Dibatalkan", message: `Laporan untuk ${roomId} telah dihapus.` });
   }, [addToast]);
 
-  // ── Booking ────────────────────────────────────────────────────────────
-
-  const bookRoom = useCallback((
+  // ── Booking ───────────────────────────────────────────────────────────────
+  const bookRoom = useCallback(async (
     roomId: string, startTime: string, endTime: string, purpose: string, groupSize: number
-  ): boolean => {
+  ): Promise<boolean> => {
     const user = getUserInfo();
     if (!user || bookings[roomId]) return false;
-    const entry: BookingEntry = {
-      id: uid(), roomId,
-      bookedBy: user.name, bookedById: user.id,
-      bookedAt: new Date(), startTime, endTime, purpose, groupSize,
+
+    const now = new Date();
+
+    // Optimistic update lokal
+    const localEntry: BookingEntry = {
+      id: `booking-${Date.now()}`,
+      roomId,
+      bookedBy: user.name,
+      bookedById: user.id,
+      bookedAt: now,
+      startTime, endTime, purpose, groupSize,
       status: "active",
     };
-    setBookings(prev => ({ ...prev, [roomId]: entry }));
-    setBookingHistory(prev => [entry, ...prev].slice(0, 50));
+
+    setBookings(prev => ({ ...prev, [roomId]: localEntry }));
+    setBookingHistory(prev => [localEntry, ...prev].slice(0, 50));
+
+    // Sinkronisasi ke Cosmos di background
+    try {
+      const res = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomId,
+          userId: user.id,
+          bookedBy: user.name,
+          bookedById: user.id,
+          userClass: "",
+          bookingDate: now.toISOString().slice(0, 10),
+          day: now.toLocaleDateString("en-US", { weekday: "long" }),
+          sessionStart: startTime,
+          sessionEnd: endTime,
+          startTime,
+          endTime,
+          purpose,
+          groupSize,
+          status: "active",
+          createdAt: now.toISOString(),
+        }),
+      });
+
+      if (res.ok) {
+        const saved: CosmosBooking = await res.json();
+        // Update id dengan yang dari Cosmos
+        const cosmosEntry = cosmosToEntry({ ...saved, bookedBy: user.name, bookedById: user.id });
+        setBookings(prev => ({ ...prev, [roomId]: cosmosEntry }));
+        setBookingHistory(prev => [
+          cosmosEntry,
+          ...prev.filter(b => b.id !== localEntry.id),
+        ].slice(0, 50));
+      }
+    } catch {
+      // Cosmos offline — entry lokal tetap dipakai
+    }
+
     addToast({ type: "success", title: "Booking Berhasil!", message: `${roomId} · ${startTime}–${endTime}` });
     return true;
   }, [bookings, addToast]);
 
-  const cancelBooking = useCallback((roomId: string) => {
+  const cancelBooking = useCallback(async (roomId: string) => {
     const entry = bookings[roomId];
-    if (entry) {
-      setBookingHistory(prev => prev.map(b => b.id === entry.id ? { ...b, status: "cancelled" } : b));
-    }
+    if (!entry) return;
+
+    // Optimistic update
+    setBookingHistory(prev => prev.map(b => b.id === entry.id ? { ...b, status: "cancelled" } : b));
     setBookings(prev => { const n = { ...prev }; delete n[roomId]; return n; });
+
+    // Sinkronisasi ke Cosmos
+    try {
+      await fetch(`/api/bookings/${entry.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "cancelled" }),
+      });
+    } catch {
+      // Cosmos offline — perubahan lokal tetap
+    }
+
     addToast({ type: "info", title: "Booking Dibatalkan", message: `Booking ${roomId} telah dibatalkan.` });
   }, [bookings, addToast]);
 
@@ -169,8 +303,7 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
     return true;
   }, [bookings, addToast]);
 
-  // ── Favorites ──────────────────────────────────────────────────────────
-
+  // ── Favorites ─────────────────────────────────────────────────────────────
   const toggleFavorite = useCallback((roomId: string) => {
     setFavorites(prev => {
       const next = prev.includes(roomId) ? prev.filter(r => r !== roomId) : [...prev, roomId];
@@ -185,8 +318,7 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
 
   const isFavorite = useCallback((roomId: string) => favorites.includes(roomId), [favorites]);
 
-  // ── Queries ────────────────────────────────────────────────────────────
-
+  // ── Queries ───────────────────────────────────────────────────────────────
   const isRescheduled = useCallback((id: string) => !!reschedules[id], [reschedules]);
   const isBooked      = useCallback((id: string) => !!bookings[id],    [bookings]);
   const getBooking    = useCallback((id: string) => bookings[id],      [bookings]);
@@ -204,11 +336,11 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <BookingContext.Provider value={{
-      reschedules, bookings, bookingHistory, favorites, toasts,
+      reschedules, bookings, bookingHistory, favorites, toasts, dbSynced,
       reportReschedule, cancelReschedule, bookRoom, cancelBooking, rescheduleBooking,
       toggleFavorite, isFavorite,
       isRescheduled, isBooked, getBooking, getReschedule, getMyBookings, getMyReports,
-      addToast, removeToast,
+      addToast, removeToast, refreshBookings,
     }}>
       {children}
     </BookingContext.Provider>

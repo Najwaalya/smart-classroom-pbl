@@ -1,26 +1,14 @@
 import { NextResponse } from "next/server";
-import { roomContainer } from "@/lib/cosmos";
+import { getAllRooms } from "@/lib/services/room.service";
 
 export async function GET() {
-
   try {
-
-    const querySpec = {
-      query: "SELECT * FROM c ORDER BY c.roomName ASC",
-    };
-
-    const { resources } = await roomContainer.items
-      .query(querySpec)
-      .fetchAll();
-
-    return NextResponse.json(resources);
-
+    const rooms = await getAllRooms();
+    return NextResponse.json({ success: true, rooms });
   } catch (error) {
-
-    console.error(error);
-
+    console.error("GET /api/rooms error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch rooms" },
+      { success: false, message: "Failed to fetch rooms" },
       { status: 500 }
     );
   }

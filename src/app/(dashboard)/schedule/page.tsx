@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useCallback, useEffect } from "react";
+import useSWR from "swr";
 import { useRoomData } from "@/contexts/RoomDataContext";
 import {
   Info, CheckCircle, Plus, Download, Trash2, CalendarDays,
@@ -9,7 +10,6 @@ import {
   DAYS, FLOORS, TIME_SLOTS, toMin, getRoomsForFloor, getScheduleForSlot,
 } from "@/lib/schedule-utils";
 import {
-  getAllSchedules, getCustomSchedules, saveCustomSchedules,
   getDistinctClasses,
 } from "@/lib/schedule-loader";
 import { ScheduleEntry } from "@/lib/schedule";
@@ -37,7 +37,6 @@ export default function SchedulePage() {
 
   // ── DOSEN state ──────────────────────────────────
   const [allSchedules, setAllSchedules] = useState<ScheduleEntry[]>([]);
-  const [customSchedules, setCustomSchedules] = useState<ScheduleEntry[]>([]);
   const [selectedClass, setSelectedClass] = useState<string>("");
   const [modalState, setModalState] = useState<ModalState>({ open: false });
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirm>(null);
@@ -53,31 +52,73 @@ export default function SchedulePage() {
   } | null>(null);
 
   // ── Init ─────────────────────────────────────────
+  const swrFetcher = (url: string) => fetch(url).then(r => r.json());
+
+  // Fetch jadwal dari Cosmos DB
+  const { data: cosmosScheduleData } = useSWR<unknown[]>("/api/schedules", swrFetcher, {
+    refreshInterval: 30000,
+  });
+
+  // Fetch bookings dari Cosmos DB
+  const { data: cosmosBookingsData } = useSWR<{ success: boolean; bookings: any[] }>("/api/bookings", swrFetcher, {
+    refreshInterval: 30000,
+  });
+
   useEffect(() => {
     setMounted(true);
     const r = getRole();
     setRole(r);
     const today = DAYS.find(d => d.key === new Date().toLocaleDateString("en-US", { weekday: "long" }))?.key ?? "Monday";
     setSelectedDay(today);
-
-    const all = getAllSchedules();
-    const custom = getCustomSchedules();
-    setAllSchedules(all);
-    setCustomSchedules(custom);
-    setSchedules(all);
-
-    // Set default class selection for dosen
-    const classes = Array.from(new Set(all.map(s => s.class ?? "").filter(Boolean))).sort();
-    if (classes.length > 0) setSelectedClass(classes[0]);
   }, []);
 
+  // Update bookings saat data Cosmos tiba
   useEffect(() => {
-    if (!mounted) return;
-    try {
-      const stored = localStorage.getItem("classroomBookings");
-      if (stored) setBookings(JSON.parse(stored) as BookingRecord[]);
-    } catch { /* empty */ }
-  }, [mounted]);
+    if (cosmosBookingsData?.success && Array.isArray(cosmosBookingsData.bookings)) {
+      const mapped = cosmosBookingsData.bookings.map(b => ({
+        id: b.id,
+        roomId: b.roomId,
+        bookedBy: b.bookedBy ?? b.userId ?? "—",
+        bookedById: b.bookedById ?? b.userId ?? "",
+        bookedAt: new Date(b.createdAt ?? new Date()),
+        startTime: b.startTime ?? b.sessionStart ?? "",
+        endTime: b.endTime ?? b.sessionEnd ?? "",
+        purpose: b.purpose ?? "",
+        groupSize: b.groupSize ?? 0,
+        status: b.status ?? "active",
+        day: b.day ?? "",
+      }));
+      setBookings(mapped.filter(b => b.status === "active"));
+    }
+  }, [cosmosBookingsData]);
+
+  // Saat data Cosmos tiba, set schedules
+  useEffect(() => {
+    if (!cosmosScheduleData || !Array.isArray(cosmosScheduleData) || cosmosScheduleData.length === 0) return;
+
+    // Konversi dokumen Cosmos ke ScheduleEntry
+    const cosmosEntries: ScheduleEntry[] = (cosmosScheduleData as Record<string, string>[]).map(c => ({
+      id: c.id,
+      room: c.roomId ?? c.room ?? "",
+      day: c.day ?? "",
+      start: c.sessionStart ?? c.start ?? "",
+      end: c.sessionEnd ?? c.end ?? "",
+      subject: c.courseName ?? c.subject ?? "",
+      lecturer: c.lecturer ?? "",
+      lecturerCode: c.lecturerCode ?? "",
+      class: c.class ?? c.classCode ?? "",
+    }));
+
+    setAllSchedules(cosmosEntries);
+    setSchedules(cosmosEntries);
+
+    const classes = Array.from(new Set(cosmosEntries.map(s => s.class ?? "").filter(Boolean))).sort();
+    if (classes.length > 0 && !selectedClass) setSelectedClass(classes[0]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cosmosScheduleData]);
+
+
+
 
   // ── Derived ──────────────────────────────────────
   const classes = useMemo(
@@ -85,74 +126,87 @@ export default function SchedulePage() {
     [allSchedules]
   );
 
-  const customIds = useMemo(
-    () => new Set(customSchedules.map(s => `${s.room}_${s.day}_${s.start}_${s.end}`)),
-    [customSchedules]
-  );
+  const customIds = useMemo(() => new Set<string>(), []);
 
   // ── CRUD handlers ────────────────────────────────
 
-  function refreshSchedules(newCustom: ScheduleEntry[]) {
-    saveCustomSchedules(newCustom);
-    setCustomSchedules(newCustom);
-    const all = getAllSchedules(); // re-read from memory (default) + saved custom
-    setAllSchedules(all);
-    setSchedules(all);
-  }
-
-  function handleSave(data: ScheduleFormData, originalEntry?: ScheduleEntry) {
-    const newEntry: ScheduleEntry = {
-      room: data.room.trim(),
+  async function handleSave(data: ScheduleFormData, originalEntry?: ScheduleEntry) {
+    const newEntry = {
+      roomId: data.room.trim(),
+      classCode: data.class.trim(),
+      courseName: data.subject.trim(),
       day: data.day,
-      start: data.start,
-      end: data.end,
-      subject: data.subject.trim(),
+      sessionStart: data.start,
+      sessionEnd: data.end,
       lecturer: data.lecturer.trim(),
       lecturerCode: data.lecturerCode.trim(),
-      class: data.class.trim(),
+      scheduleStatus: "scheduled",
+      isRescheduled: false,
     };
 
-    let newCustom = [...customSchedules];
+    setModalState({ open: false });
 
-    if (modalState.open && modalState.mode === "edit" && originalEntry) {
-      // Replace existing custom
-      const origKey = `${originalEntry.room}_${originalEntry.day}_${originalEntry.start}_${originalEntry.end}`;
-      const isOldCustom = customIds.has(origKey);
-      if (isOldCustom) {
-        newCustom = newCustom.map(s =>
-          `${s.room}_${s.day}_${s.start}_${s.end}` === origKey ? newEntry : s
-        );
+    try {
+      if (modalState.open && modalState.mode === "edit" && originalEntry && (originalEntry as any).id) {
+        // Update to Cosmos DB
+        await fetch(`/api/schedules/${(originalEntry as any).id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newEntry),
+        });
+        setSuccessMsg(`Jadwal "${newEntry.courseName}" berhasil diperbarui.`);
       } else {
-        // Default schedule edited → create a custom override (add new)
-        newCustom.push(newEntry);
+        // Insert to Cosmos DB
+        await fetch("/api/schedules", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newEntry),
+        });
+        setSuccessMsg(`Jadwal "${newEntry.courseName}" berhasil ditambahkan.`);
       }
-      setSuccessMsg(`Jadwal "${newEntry.subject}" berhasil diperbarui.`);
-    } else {
-      newCustom.push(newEntry);
-      if (!selectedClass && newEntry.class) setSelectedClass(newEntry.class);
-      setSuccessMsg(`Jadwal "${newEntry.subject}" berhasil ditambahkan.`);
+
+      // Refresh data (akan di-handle SWR polling tapi kita re-fetch manual juga bisa)
+      fetch("/api/schedules")
+        .then(res => res.json())
+        .then(json => {
+           if (Array.isArray(json)) {
+             const cosmosEntries = json.map(c => ({
+              id: c.id,
+              room: c.roomId ?? c.room ?? "",
+              day: c.day ?? "",
+              start: c.sessionStart ?? c.start ?? "",
+              end: c.sessionEnd ?? c.end ?? "",
+              subject: c.courseName ?? c.subject ?? "",
+              lecturer: c.lecturer ?? "",
+              lecturerCode: c.lecturerCode ?? "",
+              class: c.class ?? c.classCode ?? "",
+            }));
+            setAllSchedules(cosmosEntries);
+            setSchedules(cosmosEntries);
+           }
+        });
+        
+    } catch (err) {
+      console.error("[schedule] Gagal sync ke Cosmos:", err);
     }
 
-    refreshSchedules(newCustom);
-    setModalState({ open: false });
     setTimeout(() => setSuccessMsg(null), 3000);
   }
 
-  function handleDelete(entry: ScheduleEntry) {
-    const key = `${entry.room}_${entry.day}_${entry.start}_${entry.end}`;
-    const newCustom = customSchedules.filter(s =>
-      `${s.room}_${s.day}_${s.start}_${s.end}` !== key
-    );
-    refreshSchedules(newCustom);
+  async function handleDelete(entry: ScheduleEntry) {
     setDeleteConfirm(null);
-    setSuccessMsg(`Jadwal "${entry.subject}" berhasil dihapus.`);
-    setTimeout(() => setSuccessMsg(null), 3000);
-  }
-
-  function handleDeleteAll() {
-    if (!confirm("Hapus semua jadwal custom? Jadwal default tidak akan terpengaruh.")) return;
-    refreshSchedules([]);
-    setSuccessMsg("Semua jadwal custom berhasil dihapus.");
+    if ((entry as any).id) {
+      try {
+        await fetch(`/api/schedules/${(entry as any).id}`, {
+          method: "DELETE",
+        });
+        setAllSchedules(prev => prev.filter(s => (s as any).id !== (entry as any).id));
+        setSchedules(prev => prev.filter(s => (s as any).id !== (entry as any).id));
+        setSuccessMsg(`Jadwal "${entry.subject}" berhasil dihapus.`);
+      } catch (err) {
+        console.error("Gagal hapus jadwal dari Cosmos:", err);
+      }
+    }
     setTimeout(() => setSuccessMsg(null), 3000);
   }
 
@@ -215,9 +269,9 @@ export default function SchedulePage() {
   }
 
   // ═══════════════════════════════════════════════════
-  // DOSEN VIEW — Timetable klasik + CRUD
+  // ADMIN/DOSEN VIEW — Timetable klasik + CRUD
   // ═══════════════════════════════════════════════════
-  if (role === "dosen") {
+  if (role === "admin") {
     return (
       <div className="page-wrapper anim-fade-up">
         <div className="flex flex-col gap-6 pb-12">
@@ -231,15 +285,6 @@ export default function SchedulePage() {
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {customSchedules.length > 0 && (
-                <button
-                  onClick={handleDeleteAll}
-                  className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-red-200 text-red-600 text-xs font-black hover:bg-red-50 transition-all"
-                >
-                  <Trash2 size={13} />
-                  Hapus Semua Custom
-                </button>
-              )}
               <button
                 onClick={() => setModalState({ open: true, mode: "add", day: "Monday" })}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[var(--color-primary)] to-blue-500 text-white text-sm font-black hover:from-[var(--color-primary-dark)] hover:to-blue-600 transition-all shadow-lg shadow-blue-900/20"
@@ -266,7 +311,7 @@ export default function SchedulePage() {
               Pilih kelas untuk melihat timetable. Hover sel jadwal untuk aksi Edit/Hapus.
               Klik <span className="font-black text-[var(--color-primary)]">+ Tambah Jadwal</span> atau
               tombol <span className="font-black">+</span> di samping hari untuk menambah jadwal baru.
-              Jadwal bawaan (default) tidak dapat dihapus, hanya jadwal custom yang bisa dihapus.
+              Semua jadwal tersimpan di Cosmos DB.
             </p>
           </div>
 
@@ -304,11 +349,7 @@ export default function SchedulePage() {
             <div className="sm:ml-auto flex gap-3">
               <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 text-xs">
                 <span className="w-2.5 h-2.5 rounded-sm bg-blue-300" />
-                <span className="text-slate-500 font-bold">Default</span>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 text-xs">
-                <span className="w-2.5 h-2.5 rounded-sm bg-amber-300" />
-                <span className="text-slate-500 font-bold">Custom ({customSchedules.length})</span>
+                <span className="text-slate-500 font-bold">Jadwal Kelas</span>
               </div>
             </div>
           </div>
@@ -324,75 +365,7 @@ export default function SchedulePage() {
             onDelete={(entry) => setDeleteConfirm({ entry })}
           />
 
-          {/* TABEL DETAIL CUSTOM */}
-          {customSchedules.length > 0 && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-black text-slate-800">Jadwal Custom yang Ditambahkan</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">{customSchedules.length} jadwal custom aktif</p>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      {["Mata Kuliah", "Ruangan", "Hari", "Waktu", "Kelas", "Dosen", "Aksi"].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {customSchedules.map((s, i) => (
-                      <tr key={i} className="hover:bg-slate-50/50 transition-colors group">
-                        <td className="px-4 py-3">
-                          <span className="text-sm font-black text-slate-800">{s.subject ?? "—"}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs font-black text-[var(--color-primary)] bg-blue-50 px-2 py-1 rounded-lg">{s.room}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-sm text-slate-600">{DAYS.find(d => d.key === s.day)?.label}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-sm font-bold text-slate-600">{s.start} – {s.end}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs text-slate-500">{s.class ?? "—"}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs text-slate-500">{s.lecturer ?? "—"}</span>
-                          {s.lecturerCode && (
-                            <span className="ml-1.5 text-[10px] font-black text-slate-400">({s.lecturerCode})</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => setModalState({ open: true, mode: "edit", entry: s, isCustom: true })}
-                              className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
-                              title="Edit"
-                            >
-                              <CalendarDays size={14} />
-                            </button>
-                            <button
-                              onClick={() => setDeleteConfirm({ entry: s })}
-                              className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
-                              title="Hapus"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+
 
         </div>
 

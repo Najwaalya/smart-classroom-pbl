@@ -1,68 +1,100 @@
 import { NextResponse } from "next/server";
-import { bookingContainer } from "@/lib/cosmos";
+import { 
+  getAllBookings, 
+  createBooking, 
+  updateBookingStatus, 
+  cancelBooking 
+} from "@/lib/services/booking.service";
 
-// =====================================
-// GET BOOKINGS
-// =====================================
 export async function GET() {
-
   try {
-
-    const querySpec = {
-      query: "SELECT * FROM c ORDER BY c.createdAt DESC",
-    };
-
-    const { resources } = await bookingContainer.items
-      .query(querySpec)
-      .fetchAll();
-
-    return NextResponse.json(resources);
-
+    const bookings = await getAllBookings();
+    return NextResponse.json({ success: true, bookings });
   } catch (error) {
-
-    console.error(error);
-
+    console.error("GET /api/bookings error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch bookings" },
+      { success: false, message: "Failed to fetch bookings" },
       { status: 500 }
     );
   }
 }
 
-// =====================================
-// CREATE BOOKING
-// =====================================
-export async function POST(req: Request) {
-
+export async function POST(request: Request) {
   try {
+    const body = await request.json();
 
-    const body = await req.json();
+    const result = await createBooking(body);
 
-    const booking = {
-      id: `booking-${Date.now()}`,
-      roomId: body.roomId,
-      userId: body.userId,
-      userClass: body.userClass,
-      bookingDate: body.bookingDate,
-      day: body.day,
-      sessionStart: body.sessionStart,
-      sessionEnd: body.sessionEnd,
-      purpose: body.purpose,
-      status: "booked",
-      createdAt: new Date().toISOString(),
-    };
+    if (!result.success) {
+      return NextResponse.json(result, { status: 400 });
+    }
 
-    const { resource } =
-      await bookingContainer.items.create(booking);
-
-    return NextResponse.json(resource);
-
+    return NextResponse.json(result);
   } catch (error) {
-
-    console.error(error);
-
+    console.error("POST /api/bookings error:", error);
     return NextResponse.json(
-      { error: "Failed to create booking" },
+      { success: false, message: "Failed to create booking" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { bookingId, status, approvedBy, rejectedReason } = body;
+
+    if (!bookingId || !status) {
+      return NextResponse.json(
+        { success: false, message: "Booking ID and status are required" },
+        { status: 400 }
+      );
+    }
+
+    const result = await updateBookingStatus(
+      bookingId,
+      status,
+      approvedBy,
+      rejectedReason
+    );
+
+    if (!result.success) {
+      return NextResponse.json(result, { status: 400 });
+    }
+
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error("PATCH /api/bookings error:", error);
+    return NextResponse.json(
+      { success: false, message: "Failed to update booking" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const bookingId = searchParams.get("id");
+
+    if (!bookingId) {
+      return NextResponse.json(
+        { success: false, message: "Booking ID is required" },
+        { status: 400 }
+      );
+    }
+
+    const result = await cancelBooking(bookingId);
+
+    if (!result.success) {
+      return NextResponse.json(result, { status: 400 });
+    }
+
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error("DELETE /api/bookings error:", error);
+    return NextResponse.json(
+      { success: false, message: "Failed to cancel booking" },
       { status: 500 }
     );
   }

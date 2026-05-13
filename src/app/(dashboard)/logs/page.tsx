@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { LogIn, LogOut, Thermometer, ArrowRightLeft, Search, Download, RefreshCw, Filter } from "lucide-react";
+import useSWR from "swr";
+import { LogIn, LogOut, Thermometer, ArrowRightLeft, Search, Download, RefreshCw, Filter, Database, WifiOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { getRole } from "@/lib/auth";
 import { useRoomData } from "@/contexts/RoomDataContext";
@@ -18,24 +19,40 @@ interface LogEntry {
   timestamp: number;
 }
 
-// Simulasi log statis (nanti bisa diganti dengan fetch API)
-const staticLogs: LogEntry[] = [
-  { id: 1, type: "entry", room: "RT04_5B", msg: "Orang masuk terdeteksi oleh sensor di pintu masuk utama.", time: "14:42 WIB", timestamp: Date.now() - 1 * 60000 },
-  { id: 2, type: "temp", room: "LIG2_7T", msg: "Kenaikan suhu +1.4°C dalam interval 5 menit. Suhu saat ini: 25.5°C", time: "14:38 WIB", timestamp: Date.now() - 5 * 60000 },
-  { id: 3, type: "exit", room: "LSI1_6T", msg: "Semua occupant keluar — ruangan kosong.", time: "14:30 WIB", timestamp: Date.now() - 13 * 60000 },
-  { id: 4, type: "motion", room: "RT05_5B", msg: "Pergerakan dua arah terdeteksi di area pintu utama. Sensor PIR aktif.", time: "14:20 WIB", timestamp: Date.now() - 23 * 60000 },
-  { id: 5, type: "entry", room: "LIG2_7T", msg: "Batch masuk: 12 orang terdeteksi dalam 2 menit.", time: "13:58 WIB", timestamp: Date.now() - 45 * 60000 },
-  { id: 6, type: "temp", room: "RT04_5B", msg: "Suhu stabil di 22.4°C — kondisi optimal untuk pembelajaran.", time: "13:45 WIB", timestamp: Date.now() - 58 * 60000 },
-  { id: 7, type: "exit", room: "RT05_5B", msg: "3 orang keluar — status ruangan berubah menjadi Uncertain.", time: "13:30 WIB", timestamp: Date.now() - 73 * 60000 },
-  { id: 8, type: "entry", room: "LSI1_6T", msg: "Aktivitas masuk sesaat setelah jam 13.00. 22 mahasiswa terdeteksi.", time: "13:05 WIB", timestamp: Date.now() - 98 * 60000 },
-  { id: 9, type: "motion", room: "LIG2_7T", msg: "Sensor PIR mendeteksi pergerakan di sudut barat daya — kemungkinan presentasi.", time: "12:50 WIB", timestamp: Date.now() - 113 * 60000 },
-  { id: 10, type: "temp", room: "LSI1_6T", msg: "Suhu fluktuatif: 19.2°C → 21.0°C dalam 10 menit. AC mungkin mati.", time: "12:30 WIB", timestamp: Date.now() - 133 * 60000 },
-  { id: 11, type: "entry", room: "RT06_5B", msg: "Sesi kelas baru dimulai. 35 mahasiswa terdeteksi masuk.", time: "12:00 WIB", timestamp: Date.now() - 163 * 60000 },
-  { id: 12, type: "exit", room: "LIG1_7T", msg: "Sesi kelas selesai. Semua mahasiswa keluar dari ruangan.", time: "11:50 WIB", timestamp: Date.now() - 173 * 60000 },
-  { id: 13, type: "motion", room: "RT07_5B", msg: "Aktivitas tinggi terdeteksi — kemungkinan sesi diskusi kelompok.", time: "11:30 WIB", timestamp: Date.now() - 193 * 60000 },
-  { id: 14, type: "entry", room: "LSI2_6T", msg: "Dosen masuk terdeteksi sebelum mahasiswa (sensor ID prioritas).", time: "10:55 WIB", timestamp: Date.now() - 228 * 60000 },
-  { id: 15, type: "temp", room: "RT07_5B", msg: "Suhu turun ke 20.1°C — AC menyesuaikan dengan jumlah penghuni.", time: "10:30 WIB", timestamp: Date.now() - 253 * 60000 },
-];
+// Cosmos status_logs eventType → LogType mapping
+function mapEventType(eventType: string): LogType {
+  const t = (eventType ?? "").toLowerCase();
+  if (t.includes("entry") || t.includes("masuk") || t.includes("in")) return "entry";
+  if (t.includes("exit") || t.includes("keluar") || t.includes("out")) return "exit";
+  if (t.includes("temp") || t.includes("suhu") || t.includes("temperature")) return "temp";
+  return "motion";
+}
+
+// Konversi dokumen Cosmos ke LogEntry
+interface CosmosLog {
+  id: string;
+  roomId?: string;
+  room?: string;
+  eventType?: string;
+  message?: string;
+  msg?: string;
+  timestamp?: string;
+}
+
+function cosmosToLog(c: CosmosLog, idx: number): LogEntry {
+  const ts = c.timestamp ? new Date(c.timestamp) : new Date();
+  const type = mapEventType(c.eventType ?? "");
+  return {
+    id: idx,
+    type,
+    room: c.roomId ?? c.room ?? "—",
+    msg: c.message ?? c.msg ?? `Event: ${c.eventType}`,
+    time: ts.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) + " WIB",
+    timestamp: ts.getTime(),
+  };
+}
+
+const fetcher = (url: string) => fetch(url).then(r => r.json());
 
 const LOG_CONFIG = {
   entry: {
@@ -86,74 +103,39 @@ export default function LogsPage() {
   const [filter, setFilter] = useState<LogLevel>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [roomFilter, setRoomFilter] = useState("all");
-  const [logs, setLogs] = useState<LogEntry[]>(staticLogs);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { rooms } = useRoomData();
 
+  // ── Fetch dari Cosmos via SWR ────────────────────────────────────────────
+  const { data: cosmosData, error: cosmosError, mutate: mutateLogs } = useSWR(
+    mounted ? "/api/statuslogs" : null,
+    fetcher,
+    { refreshInterval: 10000 }
+  );
+  const dbOnline = !cosmosError && Array.isArray(cosmosData) && cosmosData.length > 0;
+
+  // Saat Cosmos mengembalikan data, pakai sebagai logs
+  useEffect(() => {
+    if (dbOnline && cosmosData) {
+      const cosmosLogs = (cosmosData as CosmosLog[]).map(cosmosToLog);
+      setLogs(cosmosLogs.slice(0, 50));
+    } else if (!dbOnline) {
+      // Jika Cosmos offline, set logs kosong
+      setLogs([]);
+    }
+  }, [cosmosData, dbOnline]);
+
+
+  // ── Auth check ─────────────────────────────────────────────────────────────
   useEffect(() => {
     setMounted(true);
     const role = getRole();
-    if (!role) {
-      router.replace("/login");
-      return;
-    }
-    // Hanya dosen yang bisa akses riwayat
-    if (role !== "dosen") {
-      router.replace("/");
-      return;
-    }
+    if (!role) { router.replace("/login"); return; }
+    if (role !== "admin") { router.replace("/"); return; }
   }, [router]);
 
-  // Simulasi live log: setiap 10 detik tambah log baru
-  useEffect(() => {
-    if (!mounted) return;
-    const TYPES: LogType[] = ["entry", "exit", "temp", "motion"];
-    const ROOMS = ["RT04_5B", "LIG2_7T", "LSI1_6T", "RT05_5B", "RT06_5B", "RT07_5B", "LSI2_6T", "LIG1_7T"];
-    const MESSAGES: Record<LogType, string[]> = {
-      entry: [
-        "Mahasiswa masuk terdeteksi di pintu utama.",
-        "Sensor infrared mendeteksi pergerakan masuk.",
-        "Batch masuk baru terdeteksi.",
-      ],
-      exit: [
-        "Mahasiswa keluar melalui pintu utama.",
-        "Sesi berakhir — occupant meninggalkan ruangan.",
-        "Status ruangan berubah ke kosong.",
-      ],
-      temp: [
-        "Perubahan suhu terdeteksi oleh sensor DHT.",
-        "Suhu ruangan stabil dalam batas normal.",
-        "Fluktuasi suhu signifikan terdeteksi.",
-      ],
-      motion: [
-        "Sensor PIR mendeteksi pergerakan aktif.",
-        "Aktivitas terdeteksi di sudut ruangan.",
-        "Pergerakan multidireksional terdeteksi.",
-      ],
-    };
-
-    const interval = setInterval(() => {
-      const type = TYPES[Math.floor(Math.random() * TYPES.length)];
-      const room = ROOMS[Math.floor(Math.random() * ROOMS.length)];
-      const msgs = MESSAGES[type];
-      const msg = msgs[Math.floor(Math.random() * msgs.length)];
-      const now = new Date();
-      const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")} WIB`;
-
-      const newLog: LogEntry = {
-        id: Date.now(),
-        type,
-        room,
-        msg,
-        time,
-        timestamp: Date.now(),
-      };
-
-      setLogs((prev) => [newLog, ...prev.slice(0, 49)]);
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [mounted]);
+  // No simulation - only use real data from Cosmos DB
 
   const uniqueRooms = useMemo(() => {
     const roomSet = new Set(logs.map((l) => l.room));
@@ -183,6 +165,7 @@ export default function LogsPage() {
 
   function handleRefresh() {
     setIsRefreshing(true);
+    mutateLogs();
     setTimeout(() => setIsRefreshing(false), 800);
   }
 
@@ -231,6 +214,14 @@ export default function LogsPage() {
             <p className="text-sm text-slate-500 mt-1">Catatan real-time dari semua sensor ruangan kelas.</p>
           </div>
           <div className="flex items-center gap-2">
+            {/* DB Status Badge */}
+            <span className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border ${
+              dbOnline
+                ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                : "bg-amber-50 border-amber-200 text-amber-700"
+            }`}>
+              {dbOnline ? <><Database size={12} /> Cosmos DB</> : <><WifiOff size={12} /> Simulasi</>}
+            </span>
             <button
               onClick={handleRefresh}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-black text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
@@ -336,7 +327,7 @@ export default function LogsPage() {
           </span>
           <span className="flex items-center gap-1.5 text-xs font-black text-emerald-600">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            Pembaruan otomatis setiap 10 detik
+            {dbOnline ? "Data real dari Cosmos DB · refresh 10 detik" : "Simulasi lokal · refresh 10 detik"}
           </span>
         </div>
 
