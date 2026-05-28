@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useMemo } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -22,8 +22,10 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import { useBooking } from "@/contexts/BookingContext";
 import { useRoomData } from "@/contexts/RoomDataContext";
-import { schedules } from "@/lib/schedule";
+import { getScheduleStatus, RoomSensorData } from "@/lib/schedule-status";
+import { ScheduleEntry } from "@/lib/schedule";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -49,14 +51,18 @@ function buildHourlyData(peak: number) {
   });
 }
 
+function isTimeInRange(time: string, start: string, end: string) {
+  return time >= start && time <= end;
+}
+
 // Jadwal ruangan untuk hari ini
-function getTodaySchedules(roomId: string) {
+function getTodaySchedules(roomId: string, schedules: ScheduleEntry[]) {
   const today = new Date().toLocaleDateString("en-US", { weekday: "long" });
   return schedules.filter((s) => s.room === roomId && s.day === today);
 }
 
 // Semua jadwal ruangan (semua hari)
-function getAllSchedules(roomId: string) {
+function getAllSchedules(roomId: string, schedules: ScheduleEntry[]) {
   const dayOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
   return schedules
     .filter((s) => s.room === roomId)
@@ -77,13 +83,74 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
   const { id } = use(params);
   const router = useRouter();
   const { rooms } = useRoomData();
+  const { getBooking } = useBooking();
+
+  const [scheduleData, setScheduleData] = useState<ScheduleEntry[]>([]);
+  const [scheduleLoading, setScheduleLoading] = useState(true);
 
   const room = rooms.find((r) => r.id === id);
 
+  useEffect(() => {
+    async function loadSchedules() {
+      try {
+        const res = await fetch("/api/schedules");
+        const json = await res.json();
+
+        if (json?.success && Array.isArray(json.schedules)) {
+          const entries: ScheduleEntry[] = json.schedules.map((item: any) => ({
+            room: item.roomId ?? item.room ?? "",
+            day: item.day ?? "",
+            start: item.sessionStart ?? item.start ?? "",
+            end: item.sessionEnd ?? item.end ?? "",
+            subject: item.courseName ?? item.subject ?? "",
+            lecturer: item.lecturer ?? "",
+            lecturerCode: item.lecturerCode ?? "",
+            class: item.class ?? item.classCode ?? "",
+          }));
+          setScheduleData(entries);
+        } else {
+          console.warn("[RoomDetail] /api/schedules returned no schedules or invalid payload", json);
+          setScheduleData([]);
+        }
+      } catch (error) {
+        console.error("[RoomDetail] Failed to fetch schedules:", error);
+        setScheduleData([]);
+      } finally {
+        setScheduleLoading(false);
+      }
+    }
+
+    loadSchedules();
+  }, []);
+
   // Hooks harus dipanggil sebelum early return
-  const hourlyData = useMemo(() => room ? buildHourlyData(room.students) : [], [room]);
-  const todaySchedules = useMemo(() => getTodaySchedules(id), [id]);
-  const allSchedules = useMemo(() => getAllSchedules(id), [id]);
+  const hourlyData = useMemo(() => (room ? buildHourlyData(room.students) : []), [room]);
+  const todaySchedules = useMemo(() => getTodaySchedules(id, scheduleData), [id, scheduleData]);
+  const allSchedules = useMemo(() => getAllSchedules(id, scheduleData), [id, scheduleData]);
+  const currentBooking = getBooking(id);
+  const bookingEntries = currentBooking
+    ? [{ roomId: id, day: currentBooking.day, startTime: currentBooking.startTime, endTime: currentBooking.endTime }]
+    : [];
+
+  const computedLastMotionMinutes = useMemo(() => {
+    if (!room?.lastUpdated) return 999;
+    const parsed = Date.parse(room.lastUpdated);
+    if (Number.isNaN(parsed)) return 999;
+    return Math.max(0, Math.floor((Date.now() - parsed) / 60000));
+  }, [room?.lastUpdated]);
+
+  const scheduleStatus = useMemo(() => {
+    const sensorData: RoomSensorData = {
+      students: room?.irSensor?.peopleCount ?? 0,
+      pirActivity: room?.pirSensor?.status === "active",
+      lastMotionMinutes: computedLastMotionMinutes,
+    };
+
+    return getScheduleStatus(id, sensorData, bookingEntries);
+  }, [id, room?.irSensor?.peopleCount, room?.pirSensor?.status, computedLastMotionMinutes, bookingEntries]);
+
+  const currentTime = new Date().toTimeString().slice(0, 5);
+  const currentSchedule = todaySchedules.find((s) => isTimeInRange(currentTime, s.start, s.end));
 
   if (!room) {
     return (
@@ -109,9 +176,15 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
   const sc = statusConfig[room.status];
 
   // PIR activity level
-  const pirAvg = room.pir.length > 0 ? room.pir.reduce((a, b) => a + b, 0) / room.pir.length : 0;
+  const pirAvg = room.pirSensor.activityLevel;
   const pirLabel =
-    pirAvg > 60 ? "TERDETEKSI AKTIVITAS INTENS" : pirAvg > 20 ? "AKTIVITAS SEDANG" : "TIDAK ADA AKTIVITAS";
+    room.pirSensor.status === "offline"
+      ? "PIR OFFLINE"
+      : pirAvg > 60
+      ? "TERDETEKSI AKTIVITAS INTENS"
+      : pirAvg > 20
+      ? "AKTIVITAS SEDANG"
+      : "TIDAK ADA AKTIVITAS";
 
   // Circular progress SVG
   const R = 70;
@@ -255,7 +328,7 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
                 Jaringan Sensor PIR Cahaya
               </div>
               <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full">
-                {room.pir.length} Sensor Memantau
+                {room.pirSensor.status === "offline" ? "Sensor PIR offline" : `${room.pirSensor.motionCount} sinyal`}
               </span>
             </div>
             <div className="flex items-center justify-between">
@@ -270,7 +343,7 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
               </div>
               {/* PIR bar visualizer */}
               <div className="flex items-end gap-1 h-8">
-                {room.pir.length > 0
+                {room.pirSensor.status !== "offline" && room.pir.length > 0
                   ? room.pir.map((v, i) => (
                       <div
                         key={i}
@@ -283,6 +356,101 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
                     ))}
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── SENSOR HEALTH SUMMARY ── */}
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
+        <div className="glass-panel p-5">
+          <div className="flex items-center justify-between gap-4 mb-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Health Sensor</p>
+              <p className="text-sm font-black text-slate-800 mt-2">Status koneksi seluruh sensor</p>
+            </div>
+            <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${
+              room.sensorHealth.overall === "ok"
+                ? "bg-emerald-100 text-emerald-700"
+                : room.sensorHealth.overall === "warning"
+                ? "bg-amber-100 text-amber-700"
+                : "bg-slate-100 text-slate-500"
+            }`}>
+              {room.sensorHealth.overall.toUpperCase()}
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-500">{room.sensorHealth.message}</p>
+          <p className="text-[10px] text-slate-400 mt-4">
+            Terakhir: {room.lastUpdated ? new Date(room.lastUpdated).toLocaleString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "Tidak ada data"}
+          </p>
+        </div>
+
+        <div className="glass-panel p-5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">DHT11</p>
+          <p className="text-2xl font-black text-slate-800">{room.dhtSensor.temperature.toFixed(1)}°C</p>
+          <p className="text-2xl font-black text-slate-800 mt-1">{room.dhtSensor.humidity.toFixed(1)}%</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest mt-4 text-slate-500">
+            {room.dhtSensor.health === "ok" ? "Normal" : room.dhtSensor.health === "warning" ? "Peringatan" : "Offline"}
+          </p>
+          <p className="text-[10px] text-slate-400 mt-2">
+            {room.dhtSensor.status === "offline"
+              ? "Tidak ada data DHT"
+              : room.dhtSensor.status === "high"
+              ? "Suhu / kelembapan tinggi"
+              : room.dhtSensor.status === "low"
+              ? "Kelembapan rendah"
+              : "Kondisi normal"}
+          </p>
+        </div>
+
+        <div className="glass-panel p-5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Sensor IR</p>
+          <p className="text-4xl font-black text-slate-800">{room.irSensor.peopleCount}</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest mt-1 text-slate-500">
+            {room.irSensor.status === "offline" ? "Offline" : room.irSensor.status === "present" ? "Terisi" : "Kosong"}
+          </p>
+          <p className="text-[10px] text-slate-400 mt-2">
+            {room.irSensor.lastUpdated ? `Terakhir: ${new Date(room.irSensor.lastUpdated).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}` : "Tidak ada data IR"}
+          </p>
+        </div>
+
+        <div className="glass-panel p-5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Sensor PIR</p>
+          <p className="text-2xl font-black text-slate-800">{room.pirSensor.motionCount}</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest mt-1 text-slate-500">
+            {room.pirSensor.status === "offline" ? "Offline" : room.pirSensor.status === "active" ? "Aktif" : "Inaktif"}
+          </p>
+          <p className="text-[10px] text-slate-400 mt-2">
+            Durasi: {room.pirSensor.motionDuration} ms
+          </p>
+        </div>
+      </div>
+
+      {/* ── KORELASI SENSOR DENGAN JADWAL ── */}
+      <div className="glass-panel p-5 flex flex-col gap-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Korelasi Sensor vs Jadwal</p>
+            <h3 className={`text-base font-black ${scheduleStatus.color} mt-2`}>{scheduleStatus.label}</h3>
+          </div>
+          <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${scheduleStatus.bgColor} ${scheduleStatus.color}`}>
+            {scheduleStatus.label}
+          </span>
+        </div>
+        <p className="text-sm text-slate-600">
+          {scheduleLoading ? "Memuat jadwal..." : scheduleStatus.description}
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[10px] text-slate-500">
+          <div className="p-3 bg-slate-50 rounded-2xl">
+            <p className="font-black uppercase tracking-widest">Jadwal Saat Ini</p>
+            <p className="mt-2 text-slate-700">{currentSchedule ? `${currentSchedule.start}–${currentSchedule.end}` : "Tidak ada kelas berjalan"}</p>
+          </div>
+          <div className="p-3 bg-slate-50 rounded-2xl">
+            <p className="font-black uppercase tracking-widest">Sensor Aktivitas</p>
+            <p className="mt-2 text-slate-700">{room.pirSensor.status === "active" ? "Aktif" : room.irSensor.peopleCount > 0 ? "Orang terdeteksi" : "Tidak ada aktivitas"}</p>
+          </div>
+          <div className="p-3 bg-slate-50 rounded-2xl">
+            <p className="font-black uppercase tracking-widest">Kelas</p>
+            <p className="mt-2 text-slate-700">{currentSchedule ? currentSchedule.subject ?? currentSchedule.class ?? "Kelas terjadwal" : "Tanpa jadwal"}</p>
           </div>
         </div>
       </div>

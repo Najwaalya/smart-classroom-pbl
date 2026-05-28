@@ -11,11 +11,11 @@ export type User = {
 
 const users: User[] = [
   {
-    email: "dosen@gmail.com",
+    email: "admin@gmail.com",
     nip: "197805122005011002",
     password: "197805122005011002",
     role: "admin",
-    name: "Dr. Budi Santoso, M.T.",
+    name: "Sri Whariyanti, S.S.",
   },
   {
     nim: "2341720024",

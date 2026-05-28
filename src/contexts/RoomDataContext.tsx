@@ -4,6 +4,33 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 
 export type RoomStatus = "active" | "uncertain" | "empty";
 
+export interface SensorHealth {
+  overall: "ok" | "warning" | "offline";
+  message: string;
+}
+
+export interface DhtSensorData {
+  temperature: number;
+  humidity: number;
+  status: "normal" | "high" | "low" | "offline";
+  health: "ok" | "warning" | "offline";
+  lastUpdated: string | null;
+}
+
+export interface IrSensorData {
+  peopleCount: number;
+  status: "present" | "absent" | "offline";
+  lastUpdated: string | null;
+}
+
+export interface PirSensorData {
+  motionCount: number;
+  motionDuration: number;
+  activityLevel: number;
+  status: "active" | "inactive" | "offline";
+  lastUpdated: string | null;
+}
+
 export interface Room {
   id: string;
   status: RoomStatus;
@@ -12,6 +39,12 @@ export interface Room {
   humidity: number;
   pir: number[];
   wing: string | null;
+  ledStatus: string;
+  lastUpdated: string | null;
+  sensorHealth: SensorHealth;
+  dhtSensor: DhtSensorData;
+  irSensor: IrSensorData;
+  pirSensor: PirSensorData;
 }
 
 interface RoomContextType {
@@ -37,16 +70,24 @@ export const RoomDataProvider = ({ children }: { children: React.ReactNode }) =>
     try {
       console.log("[RoomDataContext] Fetching rooms from Cosmos DB...");
       
-      const res = await fetch("/api/rooms/combined", { 
+      const res = await fetch("/api/rooms/combined", {
         cache: "no-store",
-        headers: {
-          "Content-Type": "application/json",
-        },
       });
-      
-      const json = await res.json();
-      
+
+      const contentType = res.headers.get("content-type") || "";
+      const json = contentType.includes("application/json")
+        ? await res.json()
+        : { success: false, error: `Unexpected response from /api/rooms/combined (${res.status})` };
+
       console.log("[RoomDataContext] Response:", json);
+
+      if (!res.ok) {
+        throw new Error(
+          json && typeof json.error === "string"
+            ? json.error
+            : `Request failed with status ${res.status}`
+        );
+      }
 
       if (json.success && Array.isArray(json.data)) {
         if (json.data.length > 0) {
@@ -54,11 +95,56 @@ export const RoomDataProvider = ({ children }: { children: React.ReactNode }) =>
           const transformedRooms: Room[] = json.data.map((room: any) => ({
             id: room.id,
             status: room.status || "empty",
-            students: room.students || 0,
-            temp: room.temp || 25,
-            humidity: room.humidity || 60,
-            pir: room.pir || [],
-            wing: room.wing || null,
+            students: room.students ?? 0,
+            temp: room.temp ?? 0,
+            humidity: room.humidity ?? 0,
+            pir: Array.isArray(room.pir) ? room.pir : [],
+            wing: room.wing ?? null,
+            ledStatus: room.ledStatus ?? "off",
+            lastUpdated: room.lastUpdated ?? null,
+            sensorHealth: room.sensorHealth || {
+              overall: room.lastUpdated ? "ok" : "offline",
+              message: room.lastUpdated ? "Sensor bekerja normal" : "Sensor offline",
+            },
+            dhtSensor: room.dhtSensor || {
+              temperature: room.temp ?? 0,
+              humidity: room.humidity ?? 0,
+              status: room.lastUpdated
+                ? room.temp > 28 || room.humidity > 60
+                  ? "high"
+                  : room.humidity < 40
+                  ? "low"
+                  : "normal"
+                : "offline",
+              health: room.lastUpdated
+                ? room.temp > 28 || room.humidity > 60 || room.humidity < 40
+                  ? "warning"
+                  : "ok"
+                : "offline",
+              lastUpdated: room.lastUpdated ?? null,
+            },
+            irSensor: room.irSensor || {
+              peopleCount: room.students ?? 0,
+              status:
+                room.lastUpdated == null
+                  ? "offline"
+                  : room.students > 0
+                  ? "present"
+                  : "absent",
+              lastUpdated: room.lastUpdated ?? null,
+            },
+            pirSensor: room.pirSensor || {
+              motionCount: room.pir?.[0] ?? 0,
+              motionDuration: room.pir?.[1] ?? 0,
+              activityLevel: room.pir?.[0] ?? 0,
+              status:
+                room.lastUpdated == null
+                  ? "offline"
+                  : (room.pir?.[0] ?? 0) > 10 || (room.pir?.[1] ?? 0) > 0
+                  ? "active"
+                  : "inactive",
+              lastUpdated: room.lastUpdated ?? null,
+            },
           }));
           
           setRooms(transformedRooms);

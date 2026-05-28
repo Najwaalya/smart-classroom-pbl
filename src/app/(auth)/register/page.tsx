@@ -1,162 +1,148 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
-import { Eye, EyeOff, HelpCircle, Network } from "lucide-react";
+import { Eye, EyeOff, HelpCircle } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function Register() {
   const router = useRouter();
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
   const [showPw, setShowPw] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    confirm: "",
-  });
-  const [error, setError] = useState("");
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (form.password !== form.confirm) {
-      setError("Password tidak cocok!");
-      return;
-    }
-    setError("");
-    router.push("/");
-  };
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleChange = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((prev) => ({ ...prev, [key]: e.target.value }));
+    setForm((p) => ({ ...p, [key]: e.target.value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (form.password !== form.confirm) {
+      setError("Password dan konfirmasi password tidak cocok.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: form.name, emailOrNim: form.email, password: form.password }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message || "Gagal mendaftar.");
+        setIsLoading(false);
+        return;
+      }
+
+      router.push("/login");
+    } catch (err) {
+      setError("Terjadi kesalahan jaringan.");
+      setIsLoading(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-tr from-[#f3f9f6] via-[#f7f9fc] to-[#f8f9ff] flex flex-col relative font-sans">
-
-      {/* Top Bar */}
-      <div className="flex justify-between items-center px-6 md:px-10 py-6 w-full z-20">
-        <Link href="/" className="flex items-center gap-2 text-[#183182] font-bold text-xl tracking-tight">
+    <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 flex flex-col font-sans">
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-6 md:px-10 py-6 w-full z-20">
+        <Link href="/" className="flex items-center gap-2 text-[#183182] font-bold text-xl">
           <Eye size={22} strokeWidth={2.5} />
-          ClassTrack
+          SmartClass
         </Link>
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold text-slate-500 tracking-widest uppercase hidden sm:inline">
-            Help Center
-          </span>
-          <button className="text-[#183182] hover:text-[#0b1740] transition-colors" title="Help">
-            <HelpCircle size={20} strokeWidth={2} />
-          </button>
-        </div>
+        <button className="flex items-center gap-2 text-[#183182] hover:text-[#122460]" title="Help">
+          <HelpCircle size={20} />
+        </button>
       </div>
 
-      {/* Main Container */}
-      <div className="flex-1 flex flex-col items-center justify-center relative px-4 md:px-12 pb-6 w-full">
-        <div className="w-full max-w-6xl min-h-[75vh] rounded-2xl md:rounded-[2rem] overflow-hidden relative shadow-2xl flex items-center justify-center bg-slate-200">
-
-          {/* Background Image */}
-          <div
-            className="absolute inset-0 bg-cover bg-center brightness-[1.05] z-0 opacity-90"
-            style={{
-              backgroundImage:
-                "url('https://images.unsplash.com/photo-1541888081198-636c7a6e138a?q=80&w=2070&auto=format&fit=crop')",
-            }}
-          />
-          <div className="absolute inset-0 bg-blue-900/10 mix-blend-overlay z-0" />
-
-          {/* Glass Card */}
-          <div className="relative z-10 w-full max-w-2xl px-4 md:px-6 my-8 md:my-10">
-            <div className="bg-white/60 backdrop-blur-xl rounded-[2rem] p-6 md:p-12 shadow-2xl border border-white/60 w-full relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-b from-white/50 to-transparent pointer-events-none" />
-
-              <div className="relative z-10">
-                <div className="mb-6 md:mb-8 text-center md:text-left">
-                  <h1 className="text-2xl md:text-3xl font-bold text-slate-800 tracking-tight">
-                    Create Account
-                  </h1>
-                  <p className="text-sm font-medium text-slate-600 mt-2">
-                    Daftarkan akun untuk mengakses dashboard monitoring.
-                  </p>
+      {/* Main */}
+      <div className="flex-1 flex items-center justify-center px-4 md:px-10 pb-10">
+        <div className="w-full max-w-6xl rounded-2xl overflow-hidden shadow-2xl bg-white/80 backdrop-blur-xl border border-slate-200">
+          <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] min-h-[72vh]">
+            {/* Left - form */}
+            <div className="p-8 md:p-12 flex items-center justify-center bg-white">
+              <div className="w-full max-w-lg">
+                <div className="mb-8">
+                  <h1 className="text-3xl md:text-4xl font-black text-slate-900">Buat Akun Baru</h1>
+                  <p className="mt-3 text-sm text-slate-600">Daftarkan akun baru untuk mengakses dashboard monitoring.</p>
                 </div>
 
                 {error && (
-                  <div className="mb-4 px-4 py-2.5 bg-red-50 border border-red-200 text-red-600 text-xs font-semibold rounded-xl">
+                  <div className="mb-6 rounded-2xl bg-red-50 border border-red-200 px-4 py-3 text-sm font-semibold text-red-700">
                     {error}
                   </div>
                 )}
 
-                <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-2 ml-1">
-                        Full Name
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Dr. Julian Vane"
-                        value={form.name}
-                        onChange={handleChange("name")}
-                        required
-                        className="w-full px-5 py-3.5 rounded-2xl bg-white/50 border border-white/60 focus:outline-none focus:ring-2 focus:ring-[#183182]/50 text-sm font-bold text-slate-800 placeholder:text-slate-500 placeholder:font-medium focus:bg-white/90 transition-all backdrop-blur-md"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-2 ml-1">
-                        Institutional Email
-                      </label>
-                      <input
-                        type="email"
-                        placeholder="vane@academy.edu"
-                        value={form.email}
-                        onChange={handleChange("email")}
-                        required
-                        className="w-full px-5 py-3.5 rounded-2xl bg-white/50 border border-white/60 focus:outline-none focus:ring-2 focus:ring-[#183182]/50 text-sm font-bold text-slate-800 placeholder:text-slate-500 placeholder:font-medium focus:bg-white/90 transition-all backdrop-blur-md"
-                      />
-                    </div>
+                <form className="space-y-5" onSubmit={handleSubmit}>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Nama Lengkap</label>
+                    <input
+                      type="text"
+                      required
+                      value={form.name}
+                      onChange={handleChange("name")}
+                      placeholder="Masukkan nama lengkap"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-5 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-[#183182] focus:ring-2 focus:ring-[#183182]/20"
+                    />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">NIM / Email</label>
+                    <input
+                      type="text"
+                      required
+                      value={form.email}
+                      onChange={handleChange("email")}
+                      placeholder="nim123@polinema.ac.id"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-5 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-[#183182] focus:ring-2 focus:ring-[#183182]/20"
+                    />
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-2">
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-2 ml-1">
-                        Password
-                      </label>
+                      <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Password</label>
                       <div className="relative">
                         <input
                           type={showPw ? "text" : "password"}
-                          placeholder="••••••••"
-                          value={form.password}
-                          onChange={handleChange("password")}
                           required
                           minLength={6}
-                          className="w-full px-5 py-3.5 pr-10 rounded-2xl bg-white/50 border border-white/60 focus:outline-none focus:ring-2 focus:ring-[#183182]/50 text-sm font-bold text-slate-800 placeholder:font-medium tracking-widest focus:bg-white/90 transition-all backdrop-blur-md"
+                          value={form.password}
+                          onChange={handleChange("password")}
+                          placeholder="••••••••"
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-5 py-3 pr-12 text-sm font-semibold text-slate-900 outline-none focus:border-[#183182] focus:ring-2 focus:ring-[#183182]/20"
                         />
                         <button
                           type="button"
                           onClick={() => setShowPw((p) => !p)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800"
                         >
-                          {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                          {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
                         </button>
                       </div>
                     </div>
+
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-2 ml-1">
-                        Confirm Password
-                      </label>
+                      <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Konfirmasi Password</label>
                       <div className="relative">
                         <input
                           type={showConfirm ? "text" : "password"}
-                          placeholder="••••••••"
+                          required
+                          minLength={6}
                           value={form.confirm}
                           onChange={handleChange("confirm")}
-                          required
-                          className="w-full px-5 py-3.5 pr-10 rounded-2xl bg-white/50 border border-white/60 focus:outline-none focus:ring-2 focus:ring-[#183182]/50 text-sm font-bold text-slate-800 placeholder:font-medium tracking-widest focus:bg-white/90 transition-all backdrop-blur-md"
+                          placeholder="••••••••"
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-5 py-3 pr-12 text-sm font-semibold text-slate-900 outline-none focus:border-[#183182] focus:ring-2 focus:ring-[#183182]/20"
                         />
                         <button
                           type="button"
                           onClick={() => setShowConfirm((p) => !p)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800"
                         >
-                          {showConfirm ? <EyeOff size={15} /> : <Eye size={15} />}
+                          {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
                         </button>
                       </div>
                     </div>
@@ -164,26 +150,28 @@ export default function Register() {
 
                   <button
                     type="submit"
-                    className="w-full py-4 bg-[#183182]/90 backdrop-blur-md text-white rounded-[1.25rem] font-bold text-sm mt-2 hover:bg-[#122460] active:scale-95 transition-all shadow-lg shadow-[#183182]/30"
+                    disabled={isLoading}
+                    className={`${isLoading ? "bg-slate-500 cursor-not-allowed" : "bg-[#183182] hover:bg-[#122460]"} w-full rounded-[1.5rem] py-4 text-sm font-black text-white shadow-lg shadow-slate-400/20 transition-all`}
                   >
-                    Create Account
+                    {isLoading ? "Mendaftar..." : "Daftar Akun"}
                   </button>
                 </form>
 
-                <div className="mt-6 text-center text-xs font-medium text-slate-700">
-                  Sudah punya akun?{" "}
-                  <Link href="/login" className="text-[#183182] font-bold hover:underline">
-                    Sign In
-                  </Link>
-                </div>
+                <p className="mt-6 text-center text-sm text-slate-600">
+                  Sudah punya akun?{' '}
+                  <Link href="/login" className="font-black text-[#183182] hover:underline">Login di sini</Link>
+                </p>
+              </div>
+            </div>
 
-                <div className="mt-6 flex flex-col justify-center items-center gap-3 opacity-70">
-                  <span className="text-[8px] font-bold text-slate-700 uppercase tracking-[0.2em]">
-                    Enterprise Authentication
-                  </span>
-                  <div className="w-8 h-8 rounded-full border border-slate-400 flex items-center justify-center backdrop-blur-sm bg-white/30">
-                    <Network size={14} className="text-slate-700" />
-                  </div>
+            {/* Right - image */}
+            <div className="relative hidden lg:block bg-[#183182] text-white">
+              <div className="absolute inset-0 bg-[url('/images/jti-polinema.jpg')] bg-cover bg-center opacity-80" />
+              <div className="absolute inset-0 bg-gradient-to-br from-[#183182]/80 via-[#183182]/60 to-[#0f163a]/80" />
+              <div className="relative flex h-full items-center justify-center p-10">
+                <div className="max-w-xs text-center">
+                  <h2 className="text-2xl font-black">Selamat Datang!</h2>
+                  <p className="mt-4 text-sm leading-relaxed text-slate-100/90">Bergabung menjadi pengguna SmartClass untuk memudahkan monitoring ruang kelas dan jadwal secara real-time.</p>
                 </div>
               </div>
             </div>
@@ -191,12 +179,11 @@ export default function Register() {
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="w-full px-6 md:px-10 py-6 flex flex-col md:flex-row justify-between items-center text-[9px] font-bold text-slate-400 uppercase tracking-widest z-20 gap-3">
-        <div>© 2024 ClassTrack. All Rights Reserved.</div>
+      <div className="w-full px-6 md:px-10 py-6 flex flex-col md:flex-row justify-between items-center text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] gap-3">
+        <div>© 2026 SmartClass. All Rights Reserved.</div>
         <div className="flex gap-4">
-          <button className="hover:text-slate-500 transition-colors">Privacy</button>
-          <button className="hover:text-slate-500 transition-colors">Terms</button>
+          <button className="text-slate-500 hover:text-slate-700">Privacy</button>
+          <button className="text-slate-500 hover:text-slate-700">Terms</button>
         </div>
       </div>
     </div>

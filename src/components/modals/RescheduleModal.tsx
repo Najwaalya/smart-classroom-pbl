@@ -7,9 +7,9 @@ import { useBooking, ReportType } from "@/contexts/BookingContext";
 interface Props { roomId: string; isOpen: boolean; onClose: () => void; }
 
 const TYPES: { key: ReportType; icon: React.ElementType; label: string; desc: string; color: string; bg: string; border: string }[] = [
-  { key: "mundur",         icon: Clock,    label: "Dosen Mundur Jam",  desc: "Jam masuk diundur",          color: "text-orange-600", bg: "bg-orange-50",  border: "border-orange-300" },
+  { key: "mundur",         icon: Clock,    label: "Geser Jam Kelas",    desc: "Jam masuk diundur",          color: "text-orange-600", bg: "bg-orange-50",  border: "border-orange-300" },
   { key: "ganti_hari",     icon: Calendar, label: "Ganti Hari",        desc: "Kelas pindah ke hari lain",  color: "text-blue-600",   bg: "bg-blue-50",    border: "border-blue-300" },
-  { key: "tidak_hadir",    icon: UserX,    label: "Dosen Tidak Hadir", desc: "Kelas kosong hari ini",      color: "text-red-600",    bg: "bg-red-50",     border: "border-red-300" },
+  { key: "tidak_hadir",    icon: UserX,    label: "Tidak Hadir",       desc: "Kelas kosong hari ini",      color: "text-red-600",    bg: "bg-red-50",     border: "border-red-300" },
   { key: "pindah_ruangan", icon: DoorOpen, label: "Pindah Ruangan",    desc: "Kelas di ruangan lain",      color: "text-purple-600", bg: "bg-purple-50",  border: "border-purple-300" },
 ];
 

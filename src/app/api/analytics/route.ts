@@ -116,9 +116,25 @@ export async function GET() {
       weekly,
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
 
     console.error(error);
+
+    const cosmosError = error as { code?: number | string };
+    if (cosmosError?.code === 404 || cosmosError?.code === "NotFound") {
+      console.warn(
+        "[/api/analytics] Sensor container not found, returning empty analytics",
+        error
+      );
+      return NextResponse.json(
+        {
+          sensors: [],
+          hourly: [],
+          weekly: [],
+        },
+        { status: 200 }
+      );
+    }
 
     return NextResponse.json(
       {
