@@ -287,7 +287,7 @@ export function Topbar({
                         }`}
                       >
                         {userInfo?.role === "admin"
-                          ? "DOSEN"
+                          ? "ADMIN"
                           : "MAHASISWA"}
                       </span>
                     </div>

@@ -28,6 +28,42 @@ function mapEventType(eventType: string): LogType {
   return "motion";
 }
 
+function extractTemperature(value: string): string | null {
+  const match = value.match(/(-?\d+(?:\.\d+)?)/);
+  return match ? match[1] : null;
+}
+
+function buildLogMessage(c: CosmosLog, roomName: string, type: LogType): string {
+  const roomLabel = roomName !== "—" ? `ruang ${roomName}` : "ruangan";
+  const rawEvent = (c.eventType ?? "").trim();
+  const fallbackMessage = c.message?.trim() || c.msg?.trim();
+
+  if (fallbackMessage) {
+    return fallbackMessage;
+  }
+
+  if (type === "motion") {
+    return `Pergerakan terdeteksi di ${roomLabel}`;
+  }
+
+  if (type === "temp") {
+    const tempValue = extractTemperature(rawEvent) || extractTemperature(c.message ?? "") || extractTemperature(c.msg ?? "");
+    return tempValue
+      ? `Pembaruan suhu ruangan: ${tempValue}°C`
+      : `Pembaruan suhu ruangan di ${roomLabel}`;
+  }
+
+  if (type === "entry") {
+    return `Seseorang memasuki ${roomLabel}`;
+  }
+
+  if (type === "exit") {
+    return `Seseorang meninggalkan ${roomLabel}`;
+  }
+
+  return `Aktivitas sensor terdeteksi di ${roomLabel}`;
+}
+
 // Konversi dokumen Cosmos ke LogEntry
 interface CosmosLog {
   id: string;
@@ -41,12 +77,13 @@ interface CosmosLog {
 
 function cosmosToLog(c: CosmosLog, idx: number): LogEntry {
   const ts = c.timestamp ? new Date(c.timestamp) : new Date();
+  const room = c.roomId ?? c.room ?? "—";
   const type = mapEventType(c.eventType ?? "");
   return {
     id: idx,
     type,
-    room: c.roomId ?? c.room ?? "—",
-    msg: c.message ?? c.msg ?? `Event: ${c.eventType}`,
+    room,
+    msg: buildLogMessage(c, room, type),
     time: ts.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) + " WIB",
     timestamp: ts.getTime(),
   };

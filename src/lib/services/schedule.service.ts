@@ -6,9 +6,9 @@ export interface Schedule {
   day: string;
   startTime: string;
   endTime: string;
-  subject: string;
-  lecturer: string;
-  class: string;
+  subject?: string;
+  lecturer?: string;
+  class?: string;
   semester: string;
   academicYear: string;
   createdAt?: string;

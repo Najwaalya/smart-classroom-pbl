@@ -70,6 +70,7 @@ export default function Login() {
       {/* CHANGE PASSWORD MODAL */}
       <ChangePasswordModal
         isOpen={isForgotOpen}
+        mode="forgot"
         onClose={() =>
           setForgotOpen(false)
         }
@@ -265,16 +266,6 @@ export default function Login() {
                 {isLoading ? "Memverifikasi..." : "Sign In"}
               </button>
             </form>
-
-            {/* FOOT NOTE */}
-            <div
-              className={
-                styles.registerPrompt
-              }
-            >
-              Smart Classroom IoT
-              Monitoring
-            </div>
           </div>
         </div>
 

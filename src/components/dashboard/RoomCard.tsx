@@ -8,6 +8,33 @@ import {
   ChevronRight,
 } from "lucide-react";
 
+interface SensorHealth {
+  overall: "ok" | "warning" | "offline";
+  message: string;
+}
+
+interface DhtSensorData {
+  temperature: number;
+  humidity: number;
+  status: "normal" | "high" | "low" | "offline";
+  health: "ok" | "warning" | "offline";
+  lastUpdated: string | null;
+}
+
+interface IrSensorData {
+  peopleCount: number;
+  status: "present" | "absent" | "offline";
+  lastUpdated: string | null;
+}
+
+interface PirSensorData {
+  motionCount: number;
+  motionDuration: number;
+  activityLevel: number;
+  status: "active" | "inactive" | "offline";
+  lastUpdated: string | null;
+}
+
 interface Room {
   id: string;
   wing: string | null;
@@ -15,6 +42,13 @@ interface Room {
   students: number;
   temp: number;
   humidity: number;
+  pir: number[];
+  ledStatus: string;
+  lastUpdated: string | null;
+  sensorHealth: SensorHealth;
+  dhtSensor: DhtSensorData;
+  irSensor: IrSensorData;
+  pirSensor: PirSensorData;
 }
 
 interface RoomCardProps {
@@ -73,6 +107,18 @@ export default function RoomCard({ room }: RoomCardProps) {
           </div>
         </div>
 
+        <div className="flex flex-wrap gap-2 mb-5 text-[10px] font-bold uppercase tracking-widest">
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-50 border text-slate-500">
+            IR: {room.irSensor.peopleCount} orang
+          </span>
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-50 border text-slate-500">
+            PIR: {room.pirSensor.status === "offline" ? "Offline" : room.pirSensor.status === "active" ? "Aktif" : "Inaktif"}
+          </span>
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-50 border text-slate-500">
+            DHT: {room.dhtSensor.health === "ok" ? "OK" : room.dhtSensor.health === "warning" ? "Warning" : "Offline"}
+          </span>
+        </div>
+
         <div className="flex items-end gap-3 mb-6">
           <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
             <Users size={22} />
@@ -111,6 +157,10 @@ export default function RoomCard({ room }: RoomCardProps) {
               {room.humidity.toFixed(1)}%
             </div>
           </div>
+        </div>
+
+        <div className="mt-4 text-[10px] text-slate-500">
+          {room.sensorHealth.message} • terakhir {room.lastUpdated ? new Date(room.lastUpdated).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "tidak ada data"}
         </div>
       </div>
 

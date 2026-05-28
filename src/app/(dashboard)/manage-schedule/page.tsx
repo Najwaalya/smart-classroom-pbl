@@ -15,12 +15,8 @@ interface Schedule {
   day: string;
   start: string;
   end: string;
-  subject?: string;
-  lecturer?: string;
   // Field Cosmos
   roomId?: string;
-  classCode?: string;
-  courseName?: string;
   sessionStart?: string;
   sessionEnd?: string;
   scheduleStatus?: string;
@@ -35,13 +31,9 @@ function cosmosToSchedule(c: Record<string, string>): Schedule {
     day: c.day ?? "",
     start: c.sessionStart ?? c.start ?? "",
     end: c.sessionEnd ?? c.end ?? "",
-    subject: c.courseName ?? c.subject ?? "",
-    lecturer: c.lecturer ?? "",
     roomId: c.roomId,
-    classCode: c.classCode,
-    courseName: c.courseName,
-    sessionStart: c.sessionStart,
-    sessionEnd: c.sessionEnd,
+    sessionStart: c.startTime ?? c.sessionStart,
+    sessionEnd: c.endTime ?? c.sessionEnd,
     scheduleStatus: c.scheduleStatus,
     _source: "cosmos",
   };
@@ -65,8 +57,6 @@ export default function ManageSchedulePage() {
     day: "Monday",
     start: "",
     end: "",
-    subject: "",
-    lecturer: "",
   });
 
   // ── Auth check ─────────────────────────────────────────────────────────────
@@ -96,11 +86,7 @@ export default function ManageSchedulePage() {
           day: s.day || "",
           start: s.startTime || s.sessionStart || s.start || "",
           end: s.endTime || s.sessionEnd || s.end || "",
-          subject: s.subject || s.courseName || "",
-          lecturer: s.lecturer || "",
           roomId: s.roomId,
-          classCode: s.class,
-          courseName: s.subject,
           sessionStart: s.startTime,
           sessionEnd: s.endTime,
           scheduleStatus: s.scheduleStatus,
@@ -127,8 +113,6 @@ export default function ManageSchedulePage() {
               day: s.day ?? "Monday",
               start: s.start ?? "",
               end: s.end ?? "",
-              subject: s.subject,
-              lecturer: s.lecturer,
               _source: "local" as const,
             }))
           : [];
@@ -159,9 +143,6 @@ export default function ManageSchedulePage() {
       day: formData.day,
       startTime: formData.start,
       endTime: formData.end,
-      subject: formData.subject,
-      lecturer: formData.lecturer,
-      class: "",
       semester: "Ganjil",
       academicYear: "2025/2026",
     };
@@ -181,7 +162,7 @@ export default function ManageSchedulePage() {
           throw new Error(data.message || "Gagal menyimpan ke Cosmos");
         }
 
-        setSuccessMsg(`Jadwal "${formData.subject || formData.room}" berhasil ditambahkan ke database.`);
+        setSuccessMsg(`Jadwal di ruangan "${formData.room}" berhasil ditambahkan ke database.`);
         await loadSchedules(); // Reload dari DB
       } catch (err) {
         setErrorMsg(`Gagal menyimpan: ${err instanceof Error ? err.message : "Unknown error"}`);
@@ -196,8 +177,6 @@ export default function ManageSchedulePage() {
         day: formData.day,
         start: formData.start,
         end: formData.end,
-        subject: formData.subject,
-        lecturer: formData.lecturer,
         _source: "local",
       };
       const updated = [...schedules, newSchedule];
@@ -207,7 +186,7 @@ export default function ManageSchedulePage() {
       setSuccessMsg("Jadwal disimpan secara lokal (Cosmos offline).");
     }
 
-    setFormData({ room: "", day: "Monday", start: "", end: "", subject: "", lecturer: "" });
+    setFormData({ room: "", day: "Monday", start: "", end: "" });
     setShowForm(false);
     setIsSaving(false);
     setTimeout(() => setSuccessMsg(null), 4000);
@@ -215,7 +194,7 @@ export default function ManageSchedulePage() {
 
   // ── Hapus jadwal ──────────────────────────────────────────────────────────
   const handleDeleteSchedule = async (schedule: Schedule) => {
-    if (!confirm(`Yakin ingin menghapus jadwal "${schedule.subject || schedule.room}"?`)) return;
+if (!confirm(`Yakin ingin menghapus jadwal di ruangan "${schedule.room}"?`)) return;
 
     if (schedule._source === "cosmos" && dbStatus === "online") {
       // Hapus dari Cosmos
@@ -224,7 +203,6 @@ export default function ManageSchedulePage() {
         console.log("[handleDeleteSchedule] Deleting schedule:", {
           id: schedule.id,
           room: schedule.room,
-          subject: schedule.subject,
         });
         
         const res = await fetch(`/api/schedules?id=${encodeURIComponent(schedule.id)}`, { 
@@ -270,10 +248,7 @@ export default function ManageSchedulePage() {
   // ── Filter ─────────────────────────────────────────────────────────────────
   const filteredSchedules = useMemo(() => {
     return schedules.filter(s => {
-      const matchSearch =
-        s.room.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (s.subject && s.subject.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (s.lecturer && s.lecturer.toLowerCase().includes(searchQuery.toLowerCase()));
+      const matchSearch = s.room.toLowerCase().includes(searchQuery.toLowerCase());
       const matchDay = filterDay === "all" || s.day === filterDay;
       return matchSearch && matchDay;
     });
@@ -421,33 +396,6 @@ export default function ManageSchedulePage() {
                   />
                 </div>
 
-                {/* Subject */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-black text-slate-600 uppercase tracking-wider">
-                    Mata Kuliah (Opsional)
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.subject}
-                    onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                    placeholder="Contoh: Pemrograman Web"
-                    className="px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                {/* Lecturer */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-black text-slate-600 uppercase tracking-wider">
-                    Dosen (Opsional)
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.lecturer}
-                    onChange={(e) => setFormData({ ...formData, lecturer: e.target.value })}
-                    placeholder="Contoh: Dr. Budi Santoso"
-                    className="px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -478,7 +426,7 @@ export default function ManageSchedulePage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari ruangan, mata kuliah, atau dosen..."
+              placeholder="Cari ruangan atau hari..."
               className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -528,16 +476,13 @@ export default function ManageSchedulePage() {
                     <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Ruangan</th>
                     <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Hari</th>
                     <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Waktu</th>
-                    <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Mata Kuliah</th>
-                    <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Dosen</th>
-                    <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Sumber</th>
                     <th className="px-6 py-4 text-center text-xs font-black text-slate-600 uppercase tracking-wider">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {filteredSchedules.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center text-sm text-slate-500">
+                      <td colSpan={4} className="px-6 py-12 text-center text-sm text-slate-500">
                         Tidak ada jadwal ditemukan
                       </td>
                     </tr>
@@ -565,21 +510,6 @@ export default function ManageSchedulePage() {
                               {schedule.start} - {schedule.end}
                             </span>
                           </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="text-sm text-slate-600">{schedule.subject || "-"}</span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="text-sm text-slate-600">{schedule.lecturer || "-"}</span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-block px-2 py-1 rounded-full text-xs font-black ${
-                            schedule._source === "cosmos"
-                              ? "bg-blue-100 text-blue-700"
-                              : "bg-emerald-100 text-emerald-700"
-                          }`}>
-                            {schedule._source === "cosmos" ? "Cosmos DB" : "Lokal"}
-                          </span>
                         </td>
                         <td className="px-6 py-4 text-center">
                           <button

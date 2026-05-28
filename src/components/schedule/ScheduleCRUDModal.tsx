@@ -10,10 +10,6 @@ export interface ScheduleFormData {
   day: string;
   start: string;
   end: string;
-  subject: string;
-  lecturer: string;
-  lecturerCode: string;
-  class: string;
 }
 
 interface ScheduleCRUDModalProps {
@@ -53,10 +49,6 @@ export default function ScheduleCRUDModal({
     day: initialData?.day ?? initialDay ?? "Monday",
     start: initialData?.start ?? "07:00",
     end: initialData?.end ?? "08:40",
-    subject: initialData?.subject ?? "",
-    lecturer: initialData?.lecturer ?? "",
-    lecturerCode: initialData?.lecturerCode ?? "",
-    class: initialData?.class ?? "",
   });
 
   const [error, setError] = useState<string | null>(null);
@@ -73,9 +65,7 @@ export default function ScheduleCRUDModal({
     if (timeToMinutes(form.start) >= timeToMinutes(form.end)) {
       return "Jam selesai harus lebih besar dari jam mulai.";
     }
-    if (!form.subject.trim()) return "Nama mata kuliah wajib diisi.";
 
-    // Conflict check
     const excludeKey = mode === "edit" && initialData
       ? `${initialData.room}_${initialData.day}_${initialData.start}_${initialData.end}`
       : undefined;
@@ -93,7 +83,7 @@ export default function ScheduleCRUDModal({
     });
 
     if (conflict) {
-      return `Bentrok dengan jadwal "${conflict.subject ?? conflict.room}" (${conflict.start}–${conflict.end}).`;
+      return `Bentrok dengan jadwal di ruangan "${conflict.room}" (${conflict.start}–${conflict.end}).`;
     }
 
     return null;
@@ -237,68 +227,15 @@ export default function ScheduleCRUDModal({
             </div>
           </div>
 
-          {/* Mata Kuliah */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Kode Mata Kuliah *</label>
-            <input
-              type="text"
-              value={form.subject}
-              onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
-              placeholder="Contoh: RPL_TI"
-              className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-              required
-            />
-          </div>
-
-          {/* Dosen + Kode */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="col-span-2 flex flex-col gap-1.5">
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nama Dosen</label>
-              <input
-                type="text"
-                value={form.lecturer}
-                onChange={e => setForm(f => ({ ...f, lecturer: e.target.value }))}
-                placeholder="Contoh: Dr. Budi Santoso"
-                className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Inisial</label>
-              <input
-                type="text"
-                value={form.lecturerCode}
-                onChange={e => setForm(f => ({ ...f, lecturerCode: e.target.value.toUpperCase() }))}
-                placeholder="BSN"
-                maxLength={5}
-                className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-              />
-            </div>
-          </div>
-
-          {/* Kelas */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Kelas / Prodi</label>
-            <input
-              type="text"
-              value={form.class}
-              onChange={e => setForm(f => ({ ...f, class: e.target.value }))}
-              placeholder="Contoh: TI-2A"
-              className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-            />
-          </div>
 
           {/* Preview */}
-          {form.subject && form.room && (
+          {form.room && (
             <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-800">
-              <span className="font-black">{form.subject}</span>
-              {form.class && <> · <span className="font-bold">{form.class}</span></>}
-              {form.lecturer && <> · <span>{form.lecturer}</span></>}
-              <br />
               <span className="font-bold">{form.room}</span>
+              <br />
+              <span>{DAYS.find(d => d.key === form.day)?.label}</span>
               {" · "}
-              {DAYS.find(d => d.key === form.day)?.label}
-              {" · "}
-              {form.start} – {form.end}
+              <span>{form.start} – {form.end}</span>
             </div>
           )}
 
