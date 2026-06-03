@@ -1,6 +1,19 @@
 import { NextResponse } from "next/server";
 import { roomContainer, sensorContainer, scheduleContainer } from "@/lib/cosmos";
 
+const SYSTEM_PROMPT = `Anda adalah Asisten AI ClassTrack, sebuah sistem Monitoring Kelas berbasis IoT dan Smart Classroom di Gedung TI. Tugas utama Anda adalah membantu mahasiswa dan admin.
+
+Berikut adalah panduan dan basis data terintegrasi Anda (diambil dari Azure Cosmos DB):
+1. Kontainer 'rooms': Menyimpan daftar kelas (TI-1A, TI-1B, TI-2A, TI-2B, RT02_5B).
+2. Kontainer 'schedules' & 'bookings': Menyimpan slot waktu penggunaan ruangan. Jika slot kosong, ruangan bisa dibooking oleh mahasiswa.
+3. Kontainer 'sensors_readings': Menampung data sensor nyata (PIR untuk gerakan, IR untuk jumlah orang, DHT untuk suhu/kelembapan).
+
+Aturan Menjawab:
+- Jika user bertanya 'Ruangan kosong mana sekarang?', analisis data sensor (jika PIR offline atau IR = 0 orang DAN tidak ada jadwal tetap), lalu sebutkan ruangan yang benar-benar kosong.
+- Jika user bingung cara booking, jelaskan langkahnya: 'Silakan masuk ke halaman Booking Ruangan, pilih lantai dan hari, lalu klik pada slot waktu yang berwarna hijau'.
+- Jika user bertanya arti sensor: PIR = mendeteksi gerakan manusia, IR = menghitung jumlah orang di dalam kelas, DHT = mengukur suhu dan kelembapan ruangan.
+- Jawablah dengan bahasa Indonesia yang ramah, natural, santai, mudah dipahami, singkat, dan hindari jawaban yang terlalu kaku atau berbelit-belit.`;
+
 interface CosmosRoom {
   id: string;
   roomName?: string;
@@ -91,6 +104,10 @@ function isBookingQuestion(text: string) {
   return /booking|reservasi|pesan|pinjam|batal|batalkan|cancel/.test(text);
 }
 
+function hasBookingHelpQuestion(text: string) {
+  return /\bbingung\b.*\bbooking\b|\bcara\b.*\bbooking\b|\bgimana\b.*\bbooking\b|\bbook\b.*\bruangan\b|\bhelp\b.*\bbooking\b|\bpinjam\b.*\bruangan\b/.test(text);
+}
+
 function isEmptyRoomQuestion(text: string) {
   return /ruangan .*kosong|ada ruangan.*kosong|ruangan kosong|kosong sekarang|available|tersedia/.test(text);
 }
@@ -101,6 +118,21 @@ function isScheduleQuestion(text: string) {
 
 function isSensorQuestion(text: string) {
   return /sensor|suhu|kelembapan|pir|ir|dht|orang|aktivitas|pergerakan/.test(text);
+}
+
+function isSensorMeaningQuestion(text: string) {
+  return /(arti sensor|apa itu pir|apa itu ir|apa itu dht|sensor.*arti|sensor.*maksud|maksud sensor|definisi sensor|penjelasan sensor)/.test(text);
+}
+
+function getSensorDescription() {
+  return "PIR mendeteksi gerakan manusia di dalam kelas, IR menghitung jumlah orang, DHT mengukur suhu dan kelembapan ruangan.";
+}
+
+function isRoomActuallyEmpty(sensor?: CosmosSensor, hasSchedule = false) {
+  const noSchedule = !hasSchedule;
+  const irEmpty = sensor?.peopleCount === 0;
+  const pirOffline = !sensor?.timestamp || sensor.motionDuration === undefined || sensor.motionDuration === null;
+  return noSchedule && (pirOffline || irEmpty);
 }
 
 function formatRoomTile(roomId: string) {
@@ -170,10 +202,10 @@ function hasOngoingSchedule(schedule: ScheduleEntry, currentSessionNum: number |
 function calculateSensorStatus(sensor?: CosmosSensor) {
   if (!sensor?.timestamp) return "offline";
   const peopleCount = sensor.peopleCount ?? 0;
-  const motionDuration = sensor.motionDuration ?? 0;
+  const motionDuration = sensor.motionDuration ?? -1;
   if (peopleCount > 0) return "active";
+  if (motionDuration < 0) return "uncertain";
   if (motionDuration < 60000) return "active";
-  if (motionDuration < 300000) return "uncertain";
   return "empty";
 }
 
@@ -213,21 +245,27 @@ export async function POST(request: Request) {
       });
     }
 
-    if (hasBookingFlag && !requestedRoomId) {
+    if ((hasBookingFlag || hasBookingHelpQuestion(lowerText)) && !requestedRoomId) {
       return NextResponse.json({
         success: true,
         answer:
-          "Untuk memesan ruangan, cari terlebih dahulu ruangan yang kosong atau memiliki jadwal yang sesuai. \n" +
-          "Kemudian gunakan fitur booking pada aplikasi jika tersedia, atau hubungi administrator jika belum tersedia. \n" +
-          "Jika Anda ingin memeriksa ketersediaan, tanyakan 'Ruangan kosong mana sekarang?' atau sebutkan kode ruangan seperti 'Apakah ruangan A5 kosong?'.",
+          "Silakan masuk ke halaman Booking Ruangan, pilih lantai dan hari, lalu klik pada slot waktu yang berwarna hijau. " +
+          "Jika Anda belum menemukan slot yang sesuai, periksa kembali apakah ruangan tersebut sudah terjadwal atau minta bantuan admin.",
       });
     }
 
     if (hasSensorQuestionFlag && !requestedRoomId) {
+      if (isSensorMeaningQuestion(lowerText)) {
+        return NextResponse.json({
+          success: true,
+          answer: getSensorDescription(),
+        });
+      }
+
       return NextResponse.json({
         success: true,
         answer:
-          "Sensor PIR/IR/DHT membantu mendeteksi aktivitas, suhu, dan kelembapan di ruangan. \n" +
+          "Sensor PIR/IR/DHT membantu mendeteksi aktivitas, suhu, dan kelembapan di ruangan. " +
           "Jika Anda ingin tahu status untuk ruangan tertentu, sebutkan kodenya, misalnya 'Bagaimana status sensor di ruangan B3?'.",
       });
     }
@@ -252,16 +290,19 @@ export async function POST(request: Request) {
           });
         }
 
-        if (sensorStatus === "empty") {
+        if (isRoomActuallyEmpty(roomData?.sensor, false)) {
+          const reason = !roomData?.sensor?.timestamp
+            ? "PIR tidak aktif atau data sensor belum tersedia"
+            : "IR menunjukkan 0 orang di dalam ruangan";
           return NextResponse.json({
             success: true,
-            answer: `Ruangan ${formatRoomTile(requestedRoomId)} saat ini kosong menurut data sensor. Tidak ada jadwal yang berjalan di ruangan ini sekarang.`, 
+            answer: `Ruangan ${formatRoomTile(requestedRoomId)} saat ini kosong berdasarkan data jadwal dan sensor. ${reason}.`, 
           });
         }
 
         return NextResponse.json({
           success: true,
-          answer: `Ruangan ${formatRoomTile(requestedRoomId)} kemungkinan tidak kosong sekarang. Status sensor menunjukkan ${sensorStatus}.`, 
+          answer: `Ruangan ${formatRoomTile(requestedRoomId)} saat ini tidak tampak kosong. Sensor menunjukkan status ${sensorStatus}, sementara tidak ada jadwal tetap berjalan sekarang.`, 
         });
       }
 
@@ -285,6 +326,13 @@ export async function POST(request: Request) {
       }
 
       if (hasSensorQuestionFlag) {
+        if (isSensorMeaningQuestion(lowerText)) {
+          return NextResponse.json({
+            success: true,
+            answer: `${getSensorDescription()} Saat ini untuk ${formatRoomTile(requestedRoomId)} status sensor tercatat ${sensorStatus}.`, 
+          });
+        }
+
         return NextResponse.json({
           success: true,
           answer: `Sensor untuk ${formatRoomTile(requestedRoomId)} menunjukkan status ${sensorStatus}. ${currentSchedule ? `Ada jadwal berjalan sekarang (${scheduleTimeStr}).` : "Tidak ada jadwal sekarang."}`,
@@ -299,7 +347,7 @@ export async function POST(request: Request) {
 
     if (hasEmptyQuestionFlag) {
       const freeRooms = rooms.filter((room) => {
-        const roomSchedule = schedules.some((entry) => entry.roomId === room.id && hasOngoingSchedule(entry, currentSessionNum));
+        const roomSchedule = schedules.some((entry) => entry.roomId === room.id && hasOngoingSchedule(entry, now));
         const sensorStatus = calculateSensorStatus(room.sensor);
         return !roomSchedule && sensorStatus === "empty";
       });
