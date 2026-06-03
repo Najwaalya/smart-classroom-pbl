@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       id,
       name,
       password,
-      role: "mahasiswa",
+      role: "student",
       createdAt: new Date().toISOString(),
       ...(isEmail ? { email: emailOrNim.toLowerCase() } : { nim: emailOrNim }),
     };

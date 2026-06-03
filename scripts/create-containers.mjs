@@ -60,9 +60,9 @@ async function createContainers(database) {
       description: "Room bookings",
     },
     {
-      id: "class_sessions",
-      partitionKey: "/id",
-      description: "Class sessions",
+      id: "sessions",
+      partitionKey: "/sessionNumber",
+      description: "Master sessions (schedule time slots)",
     },
     {
       id: "sensors_readings",

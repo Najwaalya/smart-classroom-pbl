@@ -2,16 +2,28 @@
 
 import { useState, useEffect, useMemo } from "react";
 import useSWR from "swr";
-import { LogIn, LogOut, Thermometer, ArrowRightLeft, Search, Download, RefreshCw, Filter, Database, WifiOff } from "lucide-react";
+import {
+  LogIn,
+  LogOut,
+  Thermometer,
+  ArrowRightLeft,
+  Search,
+  Download,
+  RefreshCw,
+  Filter,
+  Database,
+  WifiOff,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { getRole } from "@/lib/auth";
 import { useRoomData } from "@/contexts/RoomDataContext";
 
-type LogType = "entry" | "exit" | "temp" | "motion";
+// ─── Types ────────────────────────────────────────────────────────────────────
+type LogType  = "entry" | "exit" | "temperature" | "motion";
 type LogLevel = "all" | LogType;
 
 interface LogEntry {
-  id: number;
+  id: string;
   type: LogType;
   room: string;
   msg: string;
@@ -19,79 +31,62 @@ interface LogEntry {
   timestamp: number;
 }
 
-// Cosmos status_logs eventType → LogType mapping
-function mapEventType(eventType: string): LogType {
-  const t = (eventType ?? "").toLowerCase();
-  if (t.includes("entry") || t.includes("masuk") || t.includes("in")) return "entry";
-  if (t.includes("exit") || t.includes("keluar") || t.includes("out")) return "exit";
-  if (t.includes("temp") || t.includes("suhu") || t.includes("temperature")) return "temp";
-  return "motion";
-}
-
-function extractTemperature(value: string): string | null {
-  const match = value.match(/(-?\d+(?:\.\d+)?)/);
-  return match ? match[1] : null;
-}
-
-function buildLogMessage(c: CosmosLog, roomName: string, type: LogType): string {
-  const roomLabel = roomName !== "—" ? `ruang ${roomName}` : "ruangan";
-  const rawEvent = (c.eventType ?? "").trim();
-  const fallbackMessage = c.message?.trim() || c.msg?.trim();
-
-  if (fallbackMessage) {
-    return fallbackMessage;
-  }
-
-  if (type === "motion") {
-    return `Pergerakan terdeteksi di ${roomLabel}`;
-  }
-
-  if (type === "temp") {
-    const tempValue = extractTemperature(rawEvent) || extractTemperature(c.message ?? "") || extractTemperature(c.msg ?? "");
-    return tempValue
-      ? `Pembaruan suhu ruangan: ${tempValue}°C`
-      : `Pembaruan suhu ruangan di ${roomLabel}`;
-  }
-
-  if (type === "entry") {
-    return `Seseorang memasuki ${roomLabel}`;
-  }
-
-  if (type === "exit") {
-    return `Seseorang meninggalkan ${roomLabel}`;
-  }
-
-  return `Aktivitas sensor terdeteksi di ${roomLabel}`;
-}
-
-// Konversi dokumen Cosmos ke LogEntry
-interface CosmosLog {
+interface StatusLogDoc {
   id: string;
+  sensorReadingId?: string;
   roomId?: string;
-  room?: string;
-  eventType?: string;
+  eventType?: LogType;
+  currentStatus?: string;
+  previousStatus?: string;
+  peopleCount?: number;
+  motionCount?: number;
+  reason?: string;
   message?: string;
-  msg?: string;
   timestamp?: string;
 }
 
-function cosmosToLog(c: CosmosLog, idx: number): LogEntry {
-  const ts = c.timestamp ? new Date(c.timestamp) : new Date();
-  const room = c.roomId ?? c.room ?? "—";
-  const type = mapEventType(c.eventType ?? "");
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function buildMessage(doc: StatusLogDoc, type: LogType): string {
+  if (doc.reason?.trim())  return doc.reason.trim();
+  if (doc.message?.trim()) return doc.message.trim();
+
+  const room = doc.roomId ?? "ruangan";
+
+  switch (type) {
+    case "entry":
+      return `${doc.peopleCount ?? "Seseorang"} orang terdeteksi masuk ke ruang ${room}`;
+    case "exit":
+      return `Seseorang meninggalkan ruang ${room}`;
+    case "temperature":
+      return `Pembaruan suhu / kelembapan di ruang ${room}`;
+    default:
+      return `Pergerakan terdeteksi di ruang ${room}`;
+  }
+}
+
+function docToLogEntry(doc: StatusLogDoc): LogEntry {
+  const ts   = doc.timestamp ? new Date(doc.timestamp) : new Date();
+  const type = (doc.eventType ?? "motion") as LogType;
+
   return {
-    id: idx,
+    id:        doc.id,
     type,
-    room,
-    msg: buildLogMessage(c, room, type),
-    time: ts.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) + " WIB",
+    room:      doc.roomId ?? "—",
+    msg:       buildMessage(doc, type),
+    time:      ts.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) + " WIB",
     timestamp: ts.getTime(),
   };
 }
 
-const fetcher = (url: string) => fetch(url).then(r => r.json());
-
-const LOG_CONFIG = {
+// ─── Config ───────────────────────────────────────────────────────────────────
+const LOG_CONFIG: Record<LogType, {
+  icon: React.ElementType;
+  iconBg: string;
+  iconColor: string;
+  label: string;
+  badgeBg: string;
+  dot: string;
+}> = {
   entry: {
     icon: LogIn,
     iconBg: "bg-blue-50",
@@ -108,7 +103,7 @@ const LOG_CONFIG = {
     badgeBg: "bg-red-50 text-red-600 border-red-200",
     dot: "bg-red-500",
   },
-  temp: {
+  temperature: {
     icon: Thermometer,
     iconBg: "bg-orange-50",
     iconColor: "text-orange-500",
@@ -127,79 +122,100 @@ const LOG_CONFIG = {
 };
 
 const FILTER_OPTIONS: { key: LogLevel; label: string }[] = [
-  { key: "all", label: "Semua" },
-  { key: "entry", label: "Masuk" },
-  { key: "exit", label: "Keluar" },
-  { key: "temp", label: "Suhu" },
-  { key: "motion", label: "Gerak" },
+  { key: "all",         label: "Semua" },
+  { key: "entry",       label: "Masuk" },
+  { key: "exit",        label: "Keluar" },
+  { key: "temperature", label: "Suhu" },
+  { key: "motion",      label: "Gerak" },
 ];
 
+// ─── Fetcher ──────────────────────────────────────────────────────────────────
+const fetcher = (url: string) =>
+  fetch(url).then((r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  });
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 export default function LogsPage() {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
-  const [filter, setFilter] = useState<LogLevel>("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [roomFilter, setRoomFilter] = useState("all");
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const { rooms } = useRoomData();
 
-  // ── Fetch dari Cosmos via SWR ────────────────────────────────────────────
-  const { data: cosmosData, error: cosmosError, mutate: mutateLogs } = useSWR(
-    mounted ? "/api/statuslogs" : null,
+  const [mounted,      setMounted]      = useState(false);
+  const [filter,       setFilter]       = useState<LogLevel>("all");
+  const [searchQuery,  setSearchQuery]  = useState("");
+  const [roomFilter,   setRoomFilter]   = useState("all");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+useEffect(() => {
+  setMounted(true);           // ← setState
+  const role = getRole();     // ← logic
+  if (!role) { router.replace("/login"); return; }
+  if (role !== "admin") { router.replace("/"); return; }
+}, [router]);
+
+useEffect(() => {
+  setMounted(true); 
+}, []);
+
+useEffect(() => {
+  if (!mounted) return;       // ← tunggu mounted dulu
+  const role = getRole();
+  if (!role)            { router.replace("/login"); return; }
+  if (role !== "admin") { router.replace("/");      return; }
+}, [mounted, router]);        // ← jalan setelah mounted berubah
+
+  // ── SWR: fetch dari /api/statuslogs ───────────────────────────────────────
+  const {
+    data: apiResponse,
+    error: fetchError,
+    isLoading,
+    mutate: mutateLogs,
+  } = useSWR(
+    mounted ? "/api/statuslogs?limit=50" : null,
     fetcher,
-    { refreshInterval: 10000 }
+    { refreshInterval: 10_000 }
   );
-  const dbOnline = !cosmosError && Array.isArray(cosmosData) && cosmosData.length > 0;
 
-  // Saat Cosmos mengembalikan data, pakai sebagai logs
-  useEffect(() => {
-    if (dbOnline && cosmosData) {
-      const cosmosLogs = (cosmosData as CosmosLog[]).map(cosmosToLog);
-      setLogs(cosmosLogs.slice(0, 50));
-    } else if (!dbOnline) {
-      // Jika Cosmos offline, set logs kosong
-      setLogs([]);
-    }
-  }, [cosmosData, dbOnline]);
+  // ── Derive connection status & log list ───────────────────────────────────
+  const dbOnline = !fetchError && apiResponse?.success === true;
 
+  const logs: LogEntry[] = useMemo(() => {
+    if (!dbOnline || !Array.isArray(apiResponse?.data)) return [];
+    return (apiResponse.data as StatusLogDoc[]).map(docToLogEntry);
+  }, [apiResponse, dbOnline]);
 
-  // ── Auth check ─────────────────────────────────────────────────────────────
-  useEffect(() => {
-    setMounted(true);
-    const role = getRole();
-    if (!role) { router.replace("/login"); return; }
-    if (role !== "admin") { router.replace("/"); return; }
-  }, [router]);
-
-  // No simulation - only use real data from Cosmos DB
-
+  // ── Room options untuk dropdown filter ────────────────────────────────────
   const uniqueRooms = useMemo(() => {
-    const roomSet = new Set(logs.map((l) => l.room));
-    return Array.from(roomSet).sort();
-  }, [logs]);
+    const fromLogs  = logs.map((l) => l.room);
+    const fromRooms = rooms.map((r) => r.id);
+    return Array.from(new Set([...fromLogs, ...fromRooms])).sort();
+  }, [logs, rooms]);
 
-  const filtered = useMemo(() => {
-    return logs.filter((l) => {
-      const matchType = filter === "all" || l.type === filter;
-      const matchRoom = roomFilter === "all" || l.room === roomFilter;
-      const matchSearch =
-        searchQuery === "" ||
-        l.msg.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        l.room.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        LOG_CONFIG[l.type].label.toLowerCase().includes(searchQuery.toLowerCase());
+  // ── Filter ────────────────────────────────────────────────────────────────
+  const filtered = useMemo(() =>
+    logs.filter((l) => {
+      const matchType   = filter === "all" || l.type === filter;
+      const matchRoom   = roomFilter === "all" || l.room === roomFilter;
+      const q           = searchQuery.toLowerCase();
+      const matchSearch = !q ||
+        l.msg.toLowerCase().includes(q) ||
+        l.room.toLowerCase().includes(q) ||
+        LOG_CONFIG[l.type].label.toLowerCase().includes(q);
       return matchType && matchRoom && matchSearch;
-    });
-  }, [logs, filter, roomFilter, searchQuery]);
+    }),
+    [logs, filter, roomFilter, searchQuery]
+  );
 
-  // Statistik
+  // ── Stats ─────────────────────────────────────────────────────────────────
   const stats = useMemo(() => ({
-    entry: logs.filter((l) => l.type === "entry").length,
-    exit: logs.filter((l) => l.type === "exit").length,
-    temp: logs.filter((l) => l.type === "temp").length,
-    motion: logs.filter((l) => l.type === "motion").length,
+    entry:       logs.filter((l) => l.type === "entry").length,
+    exit:        logs.filter((l) => l.type === "exit").length,
+    temperature: logs.filter((l) => l.type === "temperature").length,
+    motion:      logs.filter((l) => l.type === "motion").length,
   }), [logs]);
 
+  // ── Handlers ──────────────────────────────────────────────────────────────
   function handleRefresh() {
     setIsRefreshing(true);
     mutateLogs();
@@ -217,16 +233,17 @@ export default function LogsPage() {
         l.time,
       ]),
     ];
-    const csv = rows.map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
+    const csv  = rows.map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
     a.download = `activity-logs-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
+  // ── Render: sebelum mount ─────────────────────────────────────────────────
   if (!mounted) {
     return (
       <div className="page-wrapper">
@@ -240,6 +257,7 @@ export default function LogsPage() {
     );
   }
 
+  // ── Render: main ──────────────────────────────────────────────────────────
   return (
     <div className="page-wrapper anim-fade-up">
       <div className="flex flex-col gap-6 pb-12">
@@ -250,15 +268,26 @@ export default function LogsPage() {
             <h1 className="text-3xl font-black text-slate-800 tracking-tight">Riwayat Aktivitas</h1>
             <p className="text-sm text-slate-500 mt-1">Catatan real-time dari semua sensor ruangan kelas.</p>
           </div>
+
           <div className="flex items-center gap-2">
-            {/* DB Status Badge */}
-            <span className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border ${
-              dbOnline
-                ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                : "bg-amber-50 border-amber-200 text-amber-700"
-            }`}>
-              {dbOnline ? <><Database size={12} /> Cosmos DB</> : <><WifiOff size={12} /> Simulasi</>}
+            <span
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border ${
+                isLoading
+                  ? "bg-slate-50 border-slate-200 text-slate-500"
+                  : dbOnline
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                  : "bg-red-50 border-red-200 text-red-700"
+              }`}
+            >
+              {isLoading ? (
+                <><RefreshCw size={12} className="animate-spin" /> Memuat...</>
+              ) : dbOnline ? (
+                <><Database size={12} /> Cosmos DB</>
+              ) : (
+                <><WifiOff size={12} /> Tidak terhubung</>
+              )}
             </span>
+
             <button
               onClick={handleRefresh}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-black text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
@@ -266,6 +295,7 @@ export default function LogsPage() {
               <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
               Perbarui
             </button>
+
             <button
               onClick={handleExport}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--color-primary)] text-white text-sm font-black hover:bg-[var(--color-primary-dark)] transition-all shadow-md shadow-blue-900/20"
@@ -276,10 +306,21 @@ export default function LogsPage() {
           </div>
         </div>
 
+        {/* ERROR BANNER */}
+        {fetchError && (
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
+            <WifiOff size={16} />
+            <div>
+              <p className="font-bold">Gagal terhubung ke CosmosDB</p>
+              <p className="text-xs mt-0.5 text-red-500">{fetchError.message}</p>
+            </div>
+          </div>
+        )}
+
         {/* STATS CARDS */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {(Object.keys(LOG_CONFIG) as LogType[]).map((type) => {
-            const cfg = LOG_CONFIG[type];
+            const cfg  = LOG_CONFIG[type];
             const Icon = cfg.icon;
             return (
               <button
@@ -291,9 +332,11 @@ export default function LogsPage() {
                     : "bg-white border-slate-200 hover:shadow-md"
                 }`}
               >
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                  filter === type ? "bg-white/20" : cfg.iconBg
-                }`}>
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                    filter === type ? "bg-white/20" : cfg.iconBg
+                  }`}
+                >
                   <Icon size={16} className={filter === type ? "text-white" : cfg.iconColor} />
                 </div>
                 <div>
@@ -311,7 +354,6 @@ export default function LogsPage() {
 
         {/* FILTERS */}
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-          {/* Search */}
           <div className="relative flex-1">
             <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -323,7 +365,6 @@ export default function LogsPage() {
             />
           </div>
 
-          {/* Filter by Type */}
           <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl p-1">
             {FILTER_OPTIONS.map((f) => (
               <button
@@ -340,7 +381,6 @@ export default function LogsPage() {
             ))}
           </div>
 
-          {/* Filter by Room */}
           <div className="relative">
             <Filter size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <select
@@ -356,50 +396,70 @@ export default function LogsPage() {
           </div>
         </div>
 
-        {/* RESULT COUNT + LIVE INDICATOR */}
+        {/* RESULT COUNT */}
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold text-slate-400">
-            Menampilkan <span className="text-slate-700 font-black">{filtered.length}</span> dari{" "}
+            Menampilkan{" "}
+            <span className="text-slate-700 font-black">{filtered.length}</span> dari{" "}
             <span className="text-slate-700 font-black">{logs.length}</span> entri
           </span>
           <span className="flex items-center gap-1.5 text-xs font-black text-emerald-600">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            {dbOnline ? "Data real dari Cosmos DB · refresh 10 detik" : "Simulasi lokal · refresh 10 detik"}
+            {dbOnline
+              ? "Data real dari Cosmos DB · refresh 10 detik"
+              : "Menunggu koneksi ke Cosmos DB..."}
           </span>
         </div>
 
         {/* LOG FEED */}
         <div className="flex flex-col gap-2.5">
-          {filtered.length === 0 ? (
+          {isLoading && logs.length === 0 ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm animate-pulse">
+                <div className="flex gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 bg-slate-100 rounded w-1/3" />
+                    <div className="h-3 bg-slate-100 rounded w-2/3" />
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-slate-200 shadow-sm">
               <Search size={40} className="text-slate-200 mb-4" />
-              <p className="text-slate-500 font-black">Tidak ada log yang cocok</p>
-              <p className="text-xs text-slate-400 mt-1">Coba ubah kata kunci atau filter</p>
-              <button
-                onClick={() => { setFilter("all"); setSearchQuery(""); setRoomFilter("all"); }}
-                className="mt-4 px-4 py-2 text-xs font-black text-[var(--color-primary)] bg-[var(--color-primary)]/10 rounded-lg hover:bg-[var(--color-primary)]/20 transition-colors"
-              >
-                Reset Filter
-              </button>
+              <p className="text-slate-500 font-black">
+                {dbOnline ? "Tidak ada log yang cocok" : "Tidak ada data dari CosmosDB"}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                {dbOnline
+                  ? "Coba ubah kata kunci atau filter"
+                  : "Pastikan container room_status_logs sudah ada dan berisi data"}
+              </p>
+              {dbOnline && (
+                <button
+                  onClick={() => { setFilter("all"); setSearchQuery(""); setRoomFilter("all"); }}
+                  className="mt-4 px-4 py-2 text-xs font-black text-[var(--color-primary)] bg-[var(--color-primary)]/10 rounded-lg hover:bg-[var(--color-primary)]/20 transition-colors"
+                >
+                  Reset Filter
+                </button>
+              )}
             </div>
           ) : (
             filtered.map((log, idx) => {
-              const cfg = LOG_CONFIG[log.type];
+              const cfg  = LOG_CONFIG[log.type];
               const Icon = cfg.icon;
               return (
                 <div
                   key={log.id}
                   className={`bg-white rounded-2xl p-4 border border-slate-200 shadow-sm hover:shadow-md transition-all ${
-                    idx === 0 && logs[0].id === log.id ? "ring-2 ring-[var(--color-primary)]/20 border-[var(--color-primary)]/30" : ""
+                    idx === 0 ? "ring-2 ring-[var(--color-primary)]/20 border-[var(--color-primary)]/30" : ""
                   }`}
                 >
                   <div className="flex gap-3.5">
-                    {/* Icon */}
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${cfg.iconBg}`}>
                       <Icon size={18} className={cfg.iconColor} />
                     </div>
-
-                    {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2 mb-1.5">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -414,9 +474,7 @@ export default function LogsPage() {
                           {log.time}
                         </span>
                       </div>
-                      <p className="text-sm text-slate-600 leading-relaxed">
-                        {log.msg}
-                      </p>
+                      <p className="text-sm text-slate-600 leading-relaxed">{log.msg}</p>
                     </div>
                   </div>
                 </div>
@@ -425,10 +483,10 @@ export default function LogsPage() {
           )}
         </div>
 
-        {/* FOOTER INFO */}
+        {/* FOOTER */}
         <div className="flex items-center justify-center py-4">
           <p className="text-xs text-slate-400 text-center">
-            Log diperbarui secara otomatis • Data dari sensor infrared, DHT, dan PIR
+            Log diperbarui otomatis setiap 10 detik · Data dari sensor infrared, DHT, dan PIR
           </p>
         </div>
 

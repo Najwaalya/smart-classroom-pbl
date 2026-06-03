@@ -590,7 +590,7 @@ export default function BookingPage() {
   if (
     role &&
     role !==
-      "mahasiswa"
+      "student"
   ) {
 
     return (

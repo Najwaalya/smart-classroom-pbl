@@ -1,11 +1,21 @@
 import { scheduleContainer, sessionContainer } from "@/lib/cosmos";
 
+export interface Session {
+  id: string;
+  sessionNumber: number;
+  startTime: string;
+  endTime: string;
+  label: string;
+  durationMinutes: number;
+  isBreak: boolean;
+}
+
 export interface Schedule {
   id: string;
   roomId: string;
   day: string;
-  startTime: string;
-  endTime: string;
+  sessionStart: number;
+  sessionEnd: number;
   subject?: string;
   lecturer?: string;
   class?: string;
@@ -60,7 +70,7 @@ export async function getAllSchedules(): Promise<Schedule[]> {
 export async function getSchedulesByRoom(roomId: string): Promise<Schedule[]> {
   try {
     const querySpec = {
-      query: "SELECT * FROM c WHERE c.roomId = @roomId ORDER BY c.day, c.startTime",
+      query: "SELECT * FROM c WHERE c.roomId = @roomId ORDER BY c.day, c.sessionStart",
       parameters: [{ name: "@roomId", value: roomId }],
     };
 
@@ -81,7 +91,7 @@ export async function getSchedulesByRoom(roomId: string): Promise<Schedule[]> {
 export async function getSchedulesByDay(day: string): Promise<Schedule[]> {
   try {
     const querySpec = {
-      query: "SELECT * FROM c WHERE c.day = @day ORDER BY c.startTime",
+      query: "SELECT * FROM c WHERE c.day = @day ORDER BY c.sessionStart",
       parameters: [{ name: "@day", value: day }],
     };
 
@@ -104,7 +114,7 @@ export async function createSchedule(
 ): Promise<{ success: boolean; schedule?: Schedule; message?: string }> {
   try {
     const newSchedule: Schedule = {
-      id: `${schedule.roomId}-${schedule.day}-${schedule.startTime}-${Date.now()}`,
+      id: `${schedule.roomId}-${schedule.day}-${schedule.sessionStart}-${Date.now()}`,
       ...schedule,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -155,30 +165,7 @@ export async function updateSchedule(
       updatedAt: new Date().toISOString(),
     };
 
-    // Try replacing with different potential partition keys
-    const potentialPartitionKeys = [schedule.roomId, schedule.id, schedule.day];
-    
-    let replaced = false;
-    let lastError = null;
-
-    for (const pk of potentialPartitionKeys) {
-      if (!pk) continue;
-      try {
-        await scheduleContainer.item(schedule.id, pk).replace(updatedSchedule);
-        replaced = true;
-        break;
-      } catch (e: any) {
-        if (e.code === 404 || e.statusCode === 404) {
-          lastError = e;
-        } else {
-          throw e; // If it's a different error (e.g. concurrency), throw it
-        }
-      }
-    }
-
-    if (!replaced) {
-      throw lastError || new Error("Failed to update with all known partition keys");
-    }
+    await scheduleContainer.item(schedule.id, schedule.roomId).replace(updatedSchedule);
 
     return { success: true };
   } catch (error) {
@@ -220,34 +207,9 @@ export async function deleteSchedule(
       day: schedule.day,
     });
 
-    // Try deleting with different potential partition keys
-    const potentialPartitionKeys = [schedule.roomId, schedule.id, schedule.day];
-    
-    let deleted = false;
-    let lastError = null;
-
-    for (const pk of potentialPartitionKeys) {
-      if (!pk) continue;
-      try {
-        console.log(`[deleteSchedule] Trying to delete with partition key: ${pk}`);
-        await scheduleContainer.item(schedule.id, pk).delete();
-        console.log(`[deleteSchedule] Successfully deleted schedule with partition key: ${pk}`);
-        deleted = true;
-        break;
-      } catch (e: any) {
-        if (e.code === 404 || e.statusCode === 404) {
-          console.log(`[deleteSchedule] Not found with partition key: ${pk}`);
-          lastError = e;
-        } else {
-          // If it's a different error, throw it
-          throw e;
-        }
-      }
-    }
-
-    if (!deleted) {
-      throw lastError || new Error("Failed to delete with all known partition keys");
-    }
+    console.log(`[deleteSchedule] Deleting with partition key: ${schedule.roomId}`);
+    await scheduleContainer.item(schedule.id, schedule.roomId).delete();
+    console.log(`[deleteSchedule] Successfully deleted schedule`);
 
     return { success: true };
   } catch (error: any) {
