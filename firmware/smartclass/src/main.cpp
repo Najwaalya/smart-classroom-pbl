@@ -307,7 +307,7 @@ void sendTelemetry() {
   StaticJsonDocument<512> doc;
 
   doc["deviceId"] = DEVICE_ID;
-  doc["roomId"] = "RT_5B";
+  doc["roomId"] = "LSI1_6T";
 
   doc["temperature"] = temperature;
   doc["humidity"] = humidity;

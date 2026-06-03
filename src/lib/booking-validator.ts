@@ -3,7 +3,7 @@
  * Validasi booking ruangan
  */
 
-import { schedules } from "./schedule";
+import { scheduleContainer } from "./cosmos";
 import { timeToMinutes } from "./time-utils";
 
 export interface BookingValidationResult {
@@ -12,86 +12,136 @@ export interface BookingValidationResult {
   warning?: string;
 }
 
+interface ScheduleEntry {
+  id: string;
+  roomId: string;
+  day: string;
+  sessionStart: number;
+  sessionEnd: number;
+  subject?: string;
+  startTime?: string;
+  endTime?: string;
+}
+
 /**
- * Validasi booking ruangan
+ * Get session time from session number
  */
-export function validateBooking(
+function getSessionTime(sessionNumber: number): { start: string; end: string } | null {
+  const TIME_SLOTS = [
+    { slot: 1,  start: "07:00", end: "07:50"  },
+    { slot: 2,  start: "07:50", end: "08:40"  },
+    { slot: 3,  start: "08:40", end: "09:30"  },
+    { slot: 4,  start: "09:40", end: "10:30"  },
+    { slot: 5,  start: "10:30", end: "11:20"  },
+    { slot: 6,  start: "11:20", end: "12:10"  },
+    { slot: 7,  start: "12:50", end: "13:40"  },
+    { slot: 8,  start: "13:40", end: "14:30"  },
+    { slot: 9,  start: "14:30", end: "15:20"  },
+    { slot: 10, start: "15:30", end: "16:20"  },
+    { slot: 11, start: "16:20", end: "17:10"  },
+    { slot: 12, start: "17:10", end: "18:00"  },
+  ];
+  
+  const slot = TIME_SLOTS.find(s => s.slot === sessionNumber);
+  return slot ? { start: slot.start, end: slot.end } : null;
+}
+
+/**
+ * Get schedules for a specific date and room from CosmosDB
+ */
+async function getSchedulesForRoom(
+  roomId: string,
+  day: string
+): Promise<ScheduleEntry[]> {
+  try {
+    const querySpec = {
+      query: "SELECT * FROM c WHERE c.roomId = @roomId AND c.day = @day ORDER BY c.sessionStart",
+      parameters: [
+        { name: "@roomId", value: roomId },
+        { name: "@day", value: day },
+      ],
+    };
+
+    const { resources: schedules } = await scheduleContainer.items
+      .query<ScheduleEntry>(querySpec)
+      .fetchAll();
+
+    // Add startTime and endTime for compatibility
+    return schedules.map(s => ({
+      ...s,
+      startTime: getSessionTime(s.sessionStart)?.start || "",
+      endTime: getSessionTime(s.sessionEnd)?.end || "",
+    }));
+  } catch (error) {
+    console.error("Error fetching schedules from CosmosDB:", error);
+    return [];
+  }
+}
+
+/**
+ * Validasi booking ruangan (updated to use CosmosDB)
+ */
+export async function validateBooking(
   roomId: string,
   day: string,
-  startTime: string,
-  endTime: string,
+  sessionStart: number,
+  sessionEnd: number,
   existingBookings: Array<{
     roomId: string;
     day: string;
-    startTime: string;
-    endTime: string;
+    sessionStart: number;
+    sessionEnd: number;
   }>
-): BookingValidationResult {
-  // 1. Validasi waktu
-  const startMin = timeToMinutes(startTime);
-  const endMin = timeToMinutes(endTime);
-
-  if (startMin >= endMin) {
+): Promise<BookingValidationResult> {
+  // 1. Validasi session range
+  if (sessionStart >= sessionEnd) {
     return {
       valid: false,
-      error: "Waktu selesai harus lebih dari waktu mulai",
+      error: "Session akhir harus lebih dari session mulai",
     };
   }
 
-  // 2. Validasi durasi minimum (minimal 30 menit)
-  const durationMin = endMin - startMin;
-  if (durationMin < 30) {
+  // 2. Get session times for display
+  const startTime = getSessionTime(sessionStart);
+  const endTime = getSessionTime(sessionEnd);
+  
+  if (!startTime || !endTime) {
     return {
       valid: false,
-      error: "Durasi booking minimal 30 menit",
+      error: "Nomor sesi tidak valid",
     };
   }
 
-  // 3. Validasi durasi maksimum (maksimal 4 jam)
-  if (durationMin > 240) {
-    return {
-      valid: false,
-      error: "Durasi booking maksimal 4 jam",
-    };
-  }
-
-  // 4. Cek bentrok dengan jadwal kelas
-  const scheduleConflict = schedules.find(
+  // 3. Cek bentrok dengan jadwal kelas dari CosmosDB
+  const classSchedules = await getSchedulesForRoom(roomId, day);
+  const scheduleConflict = classSchedules.find(
     (s) =>
-      s.room === roomId &&
-      s.day === day &&
-      timeToMinutes(s.start) < endMin &&
-      timeToMinutes(s.end) > startMin
+      s.sessionStart < sessionEnd &&
+      s.sessionEnd > sessionStart
   );
 
   if (scheduleConflict) {
     return {
       valid: false,
-      error: `Bentrok dengan jadwal kelas (${scheduleConflict.start} - ${scheduleConflict.end})`,
+      error: `Bentrok dengan jadwal kelas (${scheduleConflict.startTime} - ${scheduleConflict.endTime})`,
     };
   }
 
-  // 5. Cek bentrok dengan booking lain
+  // 4. Cek bentrok dengan booking lain
   const bookingConflict = existingBookings.find(
     (b) =>
       b.roomId === roomId &&
       b.day === day &&
-      timeToMinutes(b.startTime) < endMin &&
-      timeToMinutes(b.endTime) > startMin
+      b.sessionStart < sessionEnd &&
+      b.sessionEnd > sessionStart
   );
 
   if (bookingConflict) {
+    const conflictStart = getSessionTime(bookingConflict.sessionStart)?.start || "";
+    const conflictEnd = getSessionTime(bookingConflict.sessionEnd)?.end || "";
     return {
       valid: false,
-      error: `Bentrok dengan booking lain (${bookingConflict.startTime} - ${bookingConflict.endTime})`,
-    };
-  }
-
-  // 6. Warning untuk booking di luar jam operasional (07:00 - 18:00)
-  if (startMin < timeToMinutes("07:00") || endMin > timeToMinutes("18:00")) {
-    return {
-      valid: true,
-      warning: "Booking di luar jam operasional normal (07:00 - 18:00)",
+      error: `Bentrok dengan booking lain (${conflictStart} - ${conflictEnd})`,
     };
   }
 

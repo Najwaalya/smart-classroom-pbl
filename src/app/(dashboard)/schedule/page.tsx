@@ -1,6 +1,7 @@
 "use client";
+"use no memo";
 
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import useSWR from "swr";
 import { useRoomData } from "@/contexts/RoomDataContext";
 import {
@@ -42,58 +43,63 @@ export default function SchedulePage() {
   const [selectedFloor, setSelectedFloor] = useState<string>("5");
   const [selectedDay, setSelectedDay] = useState<string>("Monday");
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
-  const [schedules, setSchedules] = useState<any[]>([]);
+  const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<{
     roomId: string; day: string; slot: typeof TIME_SLOTS[0];
   } | null>(null);
 
-  // ── Init ─────────────────────────────────────────
+  // ── SWR ──────────────────────────────────────────
   const swrFetcher = (url: string) => fetch(url).then(r => r.json());
 
   interface SchedulesApiResponse {
     success: boolean;
-    schedules: Record<string, any>[];
+    schedules: Record<string, unknown>[];
   }
 
-  // Fetch jadwal dari Cosmos DB
-  const { data: cosmosScheduleData } = useSWR<SchedulesApiResponse>("/api/schedules", swrFetcher, {
-    refreshInterval: 30000,
-  });
+  const { data: cosmosScheduleData } = useSWR<SchedulesApiResponse>(
+    "/api/schedules", swrFetcher, { refreshInterval: 30000 }
+  );
 
-  // Fetch bookings dari Cosmos DB
-  const { data: cosmosBookingsData } = useSWR<{ success: boolean; bookings: any[] }>("/api/bookings", swrFetcher, {
-    refreshInterval: 30000,
-  });
+  const { data: cosmosBookingsData } = useSWR<{ success: boolean; bookings: Record<string, unknown>[] }>(
+    "/api/bookings", swrFetcher, { refreshInterval: 30000 }
+  );
 
+  // ── Mount: hanya set mounted ──────────────────────
   useEffect(() => {
     setMounted(true);
-    const r = getRole();
-    setRole(r);
-    const today = DAYS.find(d => d.key === new Date().toLocaleDateString("en-US", { weekday: "long" }))?.key ?? "Monday";
-    setSelectedDay(today);
   }, []);
 
-  // Update bookings saat data Cosmos tiba
+  // ── Init role & hari: jalan setelah mounted ───────
   useEffect(() => {
-    if (cosmosBookingsData?.success && Array.isArray(cosmosBookingsData.bookings)) {
-      const mapped = cosmosBookingsData.bookings.map(b => ({
-        id: b.id,
-        roomId: b.roomId,
-        bookedBy: b.bookedBy ?? b.userId ?? "—",
-        bookedById: b.bookedById ?? b.userId ?? "",
-        bookedAt: new Date(b.createdAt ?? new Date()),
-        startTime: b.startTime ?? b.sessionStart ?? "",
-        endTime: b.endTime ?? b.sessionEnd ?? "",
-        purpose: b.purpose ?? "",
-        groupSize: b.groupSize ?? 0,
-        status: b.status ?? "active",
-        day: b.day ?? "",
-      }));
-      setBookings(mapped.filter(b => b.status === "active"));
-    }
+    if (!mounted) return;
+    setRole(getRole());
+    const today =
+      DAYS.find(
+        d => d.key === new Date().toLocaleDateString("en-US", { weekday: "long" })
+      )?.key ?? "Monday";
+    setSelectedDay(today);
+  }, [mounted]);
+
+  // ── Update bookings saat data Cosmos tiba ─────────
+  useEffect(() => {
+    if (!cosmosBookingsData?.success || !Array.isArray(cosmosBookingsData.bookings)) return;
+    const mapped = cosmosBookingsData.bookings.map(b => ({
+      id: String(b.id ?? ""),
+      roomId: String(b.roomId ?? ""),
+      bookedBy: String(b.bookedBy ?? b.userId ?? "—"),
+      bookedById: String(b.bookedById ?? b.userId ?? ""),
+      bookedAt: new Date(String(b.createdAt ?? new Date())),
+      startTime: String(b.startTime ?? b.sessionStart ?? ""),
+      endTime: String(b.endTime ?? b.sessionEnd ?? ""),
+      purpose: String(b.purpose ?? ""),
+      groupSize: Number(b.groupSize ?? 0),
+      status: String(b.status ?? "active"),
+      day: String(b.day ?? ""),
+    }));
+    setBookings(mapped.filter(b => b.status === "active") as BookingRecord[]);
   }, [cosmosBookingsData]);
 
-  // Saat data Cosmos tiba, set schedules
+  // ── Update schedules saat data Cosmos tiba ────────
   useEffect(() => {
     if (!cosmosScheduleData?.success || !Array.isArray(cosmosScheduleData.schedules)) return;
     if (cosmosScheduleData.schedules.length === 0) {
@@ -101,29 +107,21 @@ export default function SchedulePage() {
       setSchedules([]);
       return;
     }
-
-    // Konversi dokumen Cosmos ke ScheduleEntry
     const cosmosEntries: ScheduleEntry[] = cosmosScheduleData.schedules.map(c => ({
-      id: c.id,
-      room: c.roomId ?? c.room ?? "",
-      day: c.day ?? "",
-      start: c.startTime ?? c.sessionStart ?? c.start ?? "",
-      end: c.endTime ?? c.sessionEnd ?? c.end ?? "",
+      id: String(c.id ?? ""),
+      room: String(c.roomId ?? c.room ?? ""),
+      day: String(c.day ?? ""),
+      start: String(c.startTime ?? c.sessionStart ?? c.start ?? ""),
+      end: String(c.endTime ?? c.sessionEnd ?? c.end ?? ""),
     }));
-
     setAllSchedules(cosmosEntries);
     setSchedules(cosmosEntries);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cosmosScheduleData]);
-
-
-
 
   // ── Derived ──────────────────────────────────────
   const customIds = useMemo(() => new Set<string>(), []);
 
   // ── CRUD handlers ────────────────────────────────
-
   async function handleSave(data: ScheduleFormData, originalEntry?: ScheduleEntry) {
     const newEntry = {
       roomId: data.room.trim(),
@@ -137,16 +135,14 @@ export default function SchedulePage() {
     setModalState({ open: false });
 
     try {
-      if (modalState.open && modalState.mode === "edit" && originalEntry && (originalEntry as any).id) {
-        // Update to Cosmos DB
-        await fetch(`/api/schedules/${(originalEntry as any).id}`, {
+      if (modalState.open && modalState.mode === "edit" && originalEntry && (originalEntry as ScheduleEntry & { id?: string }).id) {
+        await fetch(`/api/schedules/${(originalEntry as ScheduleEntry & { id: string }).id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(newEntry),
         });
         setSuccessMsg(`Jadwal di ruangan "${newEntry.roomId}" berhasil diperbarui.`);
       } else {
-        // Insert to Cosmos DB
         await fetch("/api/schedules", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -155,23 +151,19 @@ export default function SchedulePage() {
         setSuccessMsg(`Jadwal di ruangan "${newEntry.roomId}" berhasil ditambahkan.`);
       }
 
-      // Refresh data (akan di-handle SWR polling tapi kita re-fetch manual juga bisa)
-      fetch("/api/schedules")
-        .then(res => res.json())
-        .then(json => {
-           if (Array.isArray(json)) {
-             const cosmosEntries = json.map(c => ({
-              id: c.id,
-              room: c.roomId ?? c.room ?? "",
-              day: c.day ?? "",
-              start: c.sessionStart ?? c.start ?? "",
-              end: c.sessionEnd ?? c.end ?? "",
-            }));
-            setAllSchedules(cosmosEntries);
-            setSchedules(cosmosEntries);
-           }
-        });
-        
+      const res = await fetch("/api/schedules");
+      const json = await res.json();
+      if (json.success && Array.isArray(json.schedules)) {
+        const entries: ScheduleEntry[] = json.schedules.map((c: Record<string, unknown>) => ({
+          id: String(c.id ?? ""),
+          room: String(c.roomId ?? c.room ?? ""),
+          day: String(c.day ?? ""),
+          start: String(c.startTime ?? c.sessionStart ?? c.start ?? ""),
+          end: String(c.endTime ?? c.sessionEnd ?? c.end ?? ""),
+        }));
+        setAllSchedules(entries);
+        setSchedules(entries);
+      }
     } catch (err) {
       console.error("[schedule] Gagal sync ke Cosmos:", err);
     }
@@ -181,13 +173,12 @@ export default function SchedulePage() {
 
   async function handleDelete(entry: ScheduleEntry) {
     setDeleteConfirm(null);
-    if ((entry as any).id) {
+    const entryWithId = entry as ScheduleEntry & { id?: string };
+    if (entryWithId.id) {
       try {
-        await fetch(`/api/schedules/${(entry as any).id}`, {
-          method: "DELETE",
-        });
-        setAllSchedules(prev => prev.filter(s => (s as any).id !== (entry as any).id));
-        setSchedules(prev => prev.filter(s => (s as any).id !== (entry as any).id));
+        await fetch(`/api/schedules/${entryWithId.id}`, { method: "DELETE" });
+        setAllSchedules(prev => prev.filter(s => (s as typeof entryWithId).id !== entryWithId.id));
+        setSchedules(prev => prev.filter(s => (s as typeof entryWithId).id !== entryWithId.id));
         setSuccessMsg(`Jadwal di ruangan "${entry.room}" berhasil dihapus.`);
       } catch (err) {
         console.error("Gagal hapus jadwal dari Cosmos:", err);
@@ -197,7 +188,10 @@ export default function SchedulePage() {
   }
 
   // ── MAHASISWA helpers ─────────────────────────────
-  const roomsOnFloor = useMemo(() => getRoomsForFloor(selectedFloor, schedules), [selectedFloor, schedules]);
+  const roomsOnFloor = useMemo(
+    () => getRoomsForFloor(selectedFloor, schedules),
+    [selectedFloor, schedules]
+  );
 
   function getBookingForSlot(roomId: string, day: string, slot: typeof TIME_SLOTS[0]): BookingRecord | null {
     return bookings.find(b =>
@@ -209,23 +203,21 @@ export default function SchedulePage() {
   function isRoomOccupiedBySensor(roomId: string) {
     const room = rooms.find((r) => r.id === roomId);
     if (!room) return false;
-
     const pirActive = room.pirSensor?.status === "active";
     const irHasPeople = (room.irSensor?.peopleCount ?? 0) > 0;
     return pirActive || irHasPeople;
   }
 
-  const getBoxColor = useCallback((roomId: string, day: string, slot: typeof TIME_SLOTS[0]) => {
+  function getBoxColor(roomId: string, day: string, slot: typeof TIME_SLOTS[0]) {
     if (!mounted) return { bg: "bg-slate-200 border-slate-300", label: slot.start, clickable: false };
     const sched = getScheduleForSlot(roomId, day, slot, schedules);
     const booking = getBookingForSlot(roomId, day, slot);
     const sensorOccupied = isRoomOccupiedBySensor(roomId);
-
-    if (sched) return { bg: "bg-red-500 border-red-600", label: slot.start, clickable: false };
-    if (sensorOccupied) return { bg: "bg-red-500 border-red-600", label: slot.start, clickable: false };
-    if (booking) return { bg: "bg-slate-400 border-slate-500", label: slot.start, clickable: false };
-    return { bg: "bg-emerald-500 border-emerald-600", label: slot.start, clickable: role === "mahasiswa" };
-  }, [bookings, role, schedules, mounted, rooms]);
+    if (sched || sensorOccupied || booking) {
+      return { bg: "bg-red-500 border-red-600", label: slot.start, clickable: false };
+    }
+    return { bg: "bg-emerald-500 border-emerald-600", label: slot.start, clickable: role === "student" };
+  }
 
   const stats = useMemo(() => {
     if (!mounted) return { kosong: 0, jadwal: 0, terbooked: 0 };
@@ -242,7 +234,7 @@ export default function SchedulePage() {
     return { kosong, jadwal, terbooked };
   }, [roomsOnFloor, selectedDay, bookings, schedules, mounted]);
 
-  const getRoomStatus = useCallback((roomId: string) => {
+  function getRoomStatus(roomId: string) {
     const room = rooms.find(r => r.id === roomId);
     if (!room) return { status: "empty" as const, students: 0 };
     const sensorData: RoomSensorData = {
@@ -252,7 +244,7 @@ export default function SchedulePage() {
     };
     const statusResult = getScheduleStatus(room.id, sensorData, bookings);
     return { status: statusResult.status, students: room.students };
-  }, [rooms, bookings]);
+  }
 
   // ── Loading ───────────────────────────────────────
   if (!mounted) {
@@ -267,14 +259,13 @@ export default function SchedulePage() {
   }
 
   // ═══════════════════════════════════════════════════
-  // ADMIN/DOSEN VIEW — Timetable klasik + CRUD
+  // ADMIN VIEW
   // ═══════════════════════════════════════════════════
   if (role === "admin") {
     return (
       <div className="page-wrapper anim-fade-up">
         <div className="flex flex-col gap-6 pb-12">
 
-          {/* HEADER */}
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
               <h1 className="text-3xl font-black text-slate-800 tracking-tight">Jadwal Perkuliahan</h1>
@@ -293,7 +284,6 @@ export default function SchedulePage() {
             </div>
           </div>
 
-          {/* SUCCESS */}
           {successMsg && (
             <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200 anim-scale-in">
               <CheckCircle size={18} className="text-emerald-600 shrink-0" />
@@ -301,19 +291,16 @@ export default function SchedulePage() {
             </div>
           )}
 
-          {/* INFO */}
           <div className="flex items-start gap-3 p-4 bg-[var(--color-primary)]/5 rounded-2xl border border-[var(--color-primary)]/15">
             <Info size={15} className="text-[var(--color-primary)] shrink-0 mt-0.5" />
             <p className="text-xs text-slate-600 leading-relaxed">
               <span className="font-black text-slate-800">Panduan Admin:</span>{" "}
               Pilih kelas untuk melihat timetable. Hover sel jadwal untuk aksi Edit/Hapus.
-              Klik <span className="font-black text-[var(--color-primary)]">+ Tambah Jadwal</span> atau
-              tombol <span className="font-black">+</span> di samping hari untuk menambah jadwal baru.
+              Klik <span className="font-black text-[var(--color-primary)]">+ Tambah Jadwal</span> untuk menambah jadwal baru.
               Semua jadwal tersimpan di Cosmos DB.
             </p>
           </div>
 
-          {/* CLASS SELECTOR + STATS */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             <div className="sm:ml-auto flex gap-3">
               <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 text-xs">
@@ -323,7 +310,6 @@ export default function SchedulePage() {
             </div>
           </div>
 
-          {/* TIMETABLE */}
           <Timetable
             schedules={allSchedules}
             selectedClass=""
@@ -333,12 +319,8 @@ export default function SchedulePage() {
             onEdit={(entry, isCustom) => setModalState({ open: true, mode: "edit", entry, isCustom })}
             onDelete={(entry) => setDeleteConfirm({ entry })}
           />
-
-
-
         </div>
 
-        {/* ── CRUD MODAL ── */}
         {modalState.open && (
           <ScheduleCRUDModal
             mode={modalState.mode}
@@ -350,7 +332,6 @@ export default function SchedulePage() {
           />
         )}
 
-        {/* ── DELETE CONFIRM ── */}
         {deleteConfirm && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
@@ -391,15 +372,12 @@ export default function SchedulePage() {
   }
 
   // ═══════════════════════════════════════════════════
-  // MAHASISWA VIEW — Grid per lantai (view only, booking via halaman booking)
+  // MAHASISWA VIEW
   // ═══════════════════════════════════════════════════
-  const dayLabel = DAYS.find(d => d.key === selectedDay)?.label ?? selectedDay;
-
   return (
     <div className="page-wrapper anim-fade-up">
       <div className="flex flex-col gap-6 pb-12">
 
-        {/* HEADER */}
         <div>
           <h1 className="text-3xl font-black text-slate-800 tracking-tight">Jadwal & Monitoring Ruangan</h1>
           <p className="text-sm text-slate-500 mt-1">
@@ -407,22 +385,20 @@ export default function SchedulePage() {
           </p>
         </div>
 
-        {/* PANDUAN */}
         <div className="flex items-start gap-3 p-4 bg-[var(--color-primary)]/5 rounded-2xl border border-[var(--color-primary)]/15">
           <Info size={16} className="text-[var(--color-primary)] shrink-0 mt-0.5" />
           <div className="text-xs text-slate-600 leading-relaxed">
             <span className="font-black text-slate-800">Cara menggunakan:</span>{" "}
             Pilih lantai & hari untuk melihat jadwal kelas dan slot kosong.
             <br />
-            <span className="font-black text-red-600">Merah</span> = ada jadwal kelas (tidak bisa di-booking) ·{" "}
+            <span className="font-black text-red-600">Merah</span> = ada jadwal kelas ·{" "}
             <span className="font-black text-emerald-600">Hijau</span> = kosong (klik untuk info)
             <br />
-            <span className="font-black text-blue-600">💡 Tip:</span> Klik kotak hijau untuk melihat info slot.
-            Untuk booking, kunjungi halaman <span className="font-black">Booking Ruangan</span>.
+            <span className="font-black text-blue-600">💡 Tip:</span> Untuk booking, kunjungi halaman{" "}
+            <span className="font-black">Booking Ruangan</span>.
           </div>
         </div>
 
-        {/* CONTROLS */}
         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
           <div className="flex flex-col gap-1.5">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lantai</span>
@@ -458,10 +434,8 @@ export default function SchedulePage() {
           </div>
         </div>
 
-        {/* STATS */}
         <StatsCards kosong={stats.kosong} jadwal={stats.jadwal} terbooked={stats.terbooked} />
 
-        {/* GRID */}
         <ScheduleGrid
           rooms={roomsOnFloor}
           selectedDay={selectedDay}
@@ -474,12 +448,9 @@ export default function SchedulePage() {
           }}
         />
 
-        {/* LEGENDA */}
         <ScheduleLegend />
-
       </div>
 
-      {/* SLOT INFO MODAL */}
       {selectedSlot && (
         <SlotInfoModal
           roomId={selectedSlot.roomId}

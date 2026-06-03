@@ -30,7 +30,7 @@ async function seedUsers() {
       id: "2341720024",
       nim: "2341720024",
       password: "2341720024",
-      role: "mahasiswa",
+      role: "student",
       name: "Moch. A.B.A",
       createdAt: new Date().toISOString(),
     },

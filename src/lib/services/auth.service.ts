@@ -1,6 +1,6 @@
 import { userContainer } from "@/lib/cosmos";
 
-export type UserRole = "admin" | "mahasiswa";
+export type UserRole = "admin" | "student";
 
 export interface User {
   id: string;
@@ -10,6 +10,7 @@ export interface User {
   password: string;
   role: UserRole;
   name: string;
+  class?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -150,7 +151,7 @@ export async function seedDefaultUsers() {
         id: "2341720024",
         nim: "2341720024",
         password: "2341720024",
-        role: "mahasiswa",
+        role: "student",
         name: "Moch. A.B.A",
         createdAt: new Date().toISOString(),
       },

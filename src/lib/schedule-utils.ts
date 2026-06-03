@@ -135,3 +135,14 @@ export function getDayLabel(dayKey: string): string {
 export function getCurrentDay(): string {
   return DAYS.find(d => d.key === new Date().toLocaleDateString("en-US", { weekday: "long" }))?.key ?? "Monday";
 }
+
+/**
+ * Convert session number (1-12) to time slot { startTime, endTime }
+ * @param sessionNumber Session number (1-12)
+ * @returns Object with startTime and endTime, or null if invalid
+ */
+export function sessionToTime(sessionNumber: number): { startTime: string; endTime: string } | null {
+  const session = TIME_SLOTS.find(s => s.slot === sessionNumber);
+  if (!session) return null;
+  return { startTime: session.start, endTime: session.end };
+}
