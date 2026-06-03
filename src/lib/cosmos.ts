@@ -22,7 +22,7 @@ export const bookingContainer =
   database.container("bookings");
 
 export const sessionContainer =
-  database.container("class_sessions");
+  database.container("sessions");
 
 export const statusLogContainer =
   database.container("room_status_logs");

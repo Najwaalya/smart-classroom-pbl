@@ -36,13 +36,46 @@ interface ScheduleEntry {
   id: string;
   roomId: string;
   day: string;
-  startTime: string;
-  endTime: string;
+  sessionStart: number;
+  sessionEnd: number;
   subject?: string;
 }
 
+const TIME_SLOTS = [
+  { slot: 1,  start: "07:00", end: "07:50"  },
+  { slot: 2,  start: "07:50", end: "08:40"  },
+  { slot: 3,  start: "08:40", end: "09:30"  },
+  { slot: 4,  start: "09:40", end: "10:30"  },
+  { slot: 5,  start: "10:30", end: "11:20"  },
+  { slot: 6,  start: "11:20", end: "12:10"  },
+  { slot: 7,  start: "12:50", end: "13:40"  },
+  { slot: 8,  start: "13:40", end: "14:30"  },
+  { slot: 9,  start: "14:30", end: "15:20"  },
+  { slot: 10, start: "15:30", end: "16:20"  },
+  { slot: 11, start: "16:20", end: "17:10"  },
+  { slot: 12, start: "17:10", end: "18:00"  },
+];
+
 function getCurrentTime() {
   return new Date().toTimeString().slice(0, 5);
+}
+
+function getSessionNumber(timeString: string): number | null {
+  const [h, m] = timeString.split(":").map(Number);
+  const currentMinutes = h * 60 + m;
+  
+  for (const slot of TIME_SLOTS) {
+    const [sh, sm] = slot.start.split(":").map(Number);
+    const [eh, em] = slot.end.split(":").map(Number);
+    const startMinutes = sh * 60 + sm;
+    const endMinutes = eh * 60 + em;
+    
+    if (currentMinutes >= startMinutes && currentMinutes < endMinutes) {
+      return slot.slot;
+    }
+  }
+  
+  return null;
 }
 
 function getCurrentDay() {
@@ -150,7 +183,7 @@ async function fetchRoomsWithSensors() {
 async function fetchTodaySchedules() {
   const today = getCurrentDay();
   const querySpec = {
-    query: "SELECT * FROM c WHERE c.day = @day ORDER BY c.startTime",
+    query: "SELECT * FROM c WHERE c.day = @day ORDER BY c.sessionStart",
     parameters: [{ name: "@day", value: today }],
   };
 
@@ -161,8 +194,9 @@ async function fetchTodaySchedules() {
   return schedules;
 }
 
-function hasOngoingSchedule(schedule: ScheduleEntry, now: string) {
-  return now >= schedule.startTime && now <= schedule.endTime;
+function hasOngoingSchedule(schedule: ScheduleEntry, currentSessionNum: number | null): boolean {
+  if (currentSessionNum === null) return false;
+  return currentSessionNum >= schedule.sessionStart && currentSessionNum <= schedule.sessionEnd;
 }
 
 function calculateSensorStatus(sensor?: CosmosSensor) {
@@ -187,6 +221,7 @@ export async function POST(request: Request) {
     const rooms = await fetchRoomsWithSensors();
     const schedules = await fetchTodaySchedules();
     const now = getCurrentTime();
+    const currentSessionNum = getSessionNumber(now);
     const roomIds = rooms.map((room) => room.id);
     const requestedRoomId = findRoomId(lowerText, roomIds);
     const hasScheduleQuestionFlag = isScheduleQuestion(lowerText);
@@ -238,16 +273,20 @@ export async function POST(request: Request) {
     if (requestedRoomId) {
       const roomData = rooms.find((room) => room.id === requestedRoomId);
       const currentSchedule = schedules.find(
-        (entry) => entry.roomId === requestedRoomId && hasOngoingSchedule(entry, now)
+        (entry) => entry.roomId === requestedRoomId && hasOngoingSchedule(entry, currentSessionNum)
       );
       const sensorStatus = calculateSensorStatus(roomData?.sensor);
       const readableStatus = getScheduleStatusLabel(sensorStatus, Boolean(currentSchedule));
+      
+      const scheduleTimeStr = currentSchedule 
+        ? `${TIME_SLOTS[currentSchedule.sessionStart - 1]?.start || ""}–${TIME_SLOTS[currentSchedule.sessionEnd - 1]?.end || ""}`
+        : "";
 
       if (hasEmptyQuestionFlag) {
         if (currentSchedule) {
           return NextResponse.json({
             success: true,
-            answer: `Ruangan ${formatRoomTile(requestedRoomId)} saat ini terjadwal untuk kelas ${currentSchedule.subject ?? "(tidak disebutkan)"} ${currentSchedule.startTime}-${currentSchedule.endTime}. Sensor mencatat status ${sensorStatus}, jadi sebaiknya cek langsung jika diperlukan.`, 
+            answer: `Ruangan ${formatRoomTile(requestedRoomId)} saat ini terjadwal untuk kelas ${currentSchedule.subject ?? "(tidak disebutkan)"} ${scheduleTimeStr}. Sensor mencatat status ${sensorStatus}, jadi sebaiknya cek langsung jika diperlukan.`, 
           });
         }
 
@@ -276,7 +315,10 @@ export async function POST(request: Request) {
           });
         }
 
-        const lines = todayScheduleForRoom.map((entry) => `- ${entry.startTime}–${entry.endTime}: ${entry.subject ?? "Kelas"}`);
+        const lines = todayScheduleForRoom.map((entry) => {
+          const timeStr = `${TIME_SLOTS[entry.sessionStart - 1]?.start || ""}-${TIME_SLOTS[entry.sessionEnd - 1]?.end || ""}`;
+          return `- ${timeStr}: ${entry.subject ?? "Kelas"}`;
+        });
         return NextResponse.json({
           success: true,
           answer: `Jadwal hari ini untuk ${formatRoomTile(requestedRoomId)}:\n${lines.join("\n")}`,
@@ -293,20 +335,21 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
           success: true,
-          answer: `Sensor untuk ${formatRoomTile(requestedRoomId)} menunjukkan status ${sensorStatus}. ${currentSchedule ? `Ada jadwal berjalan sekarang (${currentSchedule.startTime}-${currentSchedule.endTime}).` : "Tidak ada jadwal sekarang."}`,
+          answer: `Sensor untuk ${formatRoomTile(requestedRoomId)} menunjukkan status ${sensorStatus}. ${currentSchedule ? `Ada jadwal berjalan sekarang (${scheduleTimeStr}).` : "Tidak ada jadwal sekarang."}`,
         });
       }
 
       return NextResponse.json({
         success: true,
-        answer: `Saya menemukan ruangan ${formatRoomTile(requestedRoomId)}. Status saat ini: ${readableStatus}. ${currentSchedule ? `Saat ini kelas berjalan dari ${currentSchedule.startTime} sampai ${currentSchedule.endTime}.` : "Tidak ada kelas saat ini."}`,
+        answer: `Saya menemukan ruangan ${formatRoomTile(requestedRoomId)}. Status saat ini: ${readableStatus}. ${currentSchedule ? `Saat ini kelas berjalan dari ${scheduleTimeStr}.` : "Tidak ada kelas saat ini."}`,
       });
     }
 
     if (hasEmptyQuestionFlag) {
       const freeRooms = rooms.filter((room) => {
         const roomSchedule = schedules.some((entry) => entry.roomId === room.id && hasOngoingSchedule(entry, now));
-        return isRoomActuallyEmpty(room.sensor, roomSchedule);
+        const sensorStatus = calculateSensorStatus(room.sensor);
+        return !roomSchedule && sensorStatus === "empty";
       });
 
       if (freeRooms.length === 0) {

@@ -7,9 +7,8 @@ import {
   LineChart,
   History,
   X,
- CalendarDays,
+  CalendarDays,
   BookOpen,
-  Settings,
 } from "lucide-react";
 import { getRole } from "@/lib/auth";
 import { useState, useEffect } from "react";
@@ -43,8 +42,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       icon: CalendarDays,
     },
 
-    // MENU KHUSUS MAHASISWA
-    ...(mounted && role === "mahasiswa"
+    // MENU KHUSUS STUDENT
+    ...(mounted && role === "student"
       ? [
           {
             name: "Booking Ruangan",
@@ -57,11 +56,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
     // MENU KHUSUS ADMIN
     ...(mounted && role === "admin"
       ? [
-          {
-            name: "Kelola Jadwal",
-            href: "/manage-schedule",
-            icon: Settings,
-          },
           {
             name: "Analitik",
             href: "/analytics",

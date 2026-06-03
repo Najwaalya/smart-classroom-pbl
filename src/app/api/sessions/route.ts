@@ -2,9 +2,7 @@ import { NextResponse } from "next/server";
 import { sessionContainer } from "@/lib/cosmos";
 
 export async function GET() {
-
   try {
-
     const querySpec = {
       query: "SELECT * FROM c ORDER BY c.sessionNumber ASC",
     };
@@ -13,14 +11,14 @@ export async function GET() {
       .query(querySpec)
       .fetchAll();
 
-    return NextResponse.json(resources);
-
+    return NextResponse.json({
+      success: true,
+      data: resources,
+    });
   } catch (error) {
-
-    console.error(error);
-
+    console.error("[GET /api/sessions] Error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch sessions" },
+      { success: false, error: "Failed to fetch sessions" },
       { status: 500 }
     );
   }

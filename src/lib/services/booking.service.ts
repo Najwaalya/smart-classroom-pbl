@@ -6,16 +6,22 @@ export interface Booking {
   userId: string;
   userName: string;
   userNim: string;
+  userClass: string;
+  day: string;
   date: string;
-  startTime: string;
-  endTime: string;
+  bookingDate: string;
+  sessionStart: number;
+  sessionEnd: number;
   purpose: string;
-  status: "pending" | "approved" | "rejected" | "cancelled" | "completed";
+  status: "booked" | "cancelled" | "completed";
   createdAt: string;
   updatedAt?: string;
-  approvedBy?: string;
-  approvedAt?: string;
-  rejectedReason?: string;
+}
+
+// ── Tipe untuk parameter query CosmosDB ──────────────────────────────
+interface QueryParameter {
+  name: string;
+  value: string | number | boolean;
 }
 
 /**
@@ -24,7 +30,7 @@ export interface Booking {
 export async function getAllBookings(): Promise<Booking[]> {
   try {
     const { resources: bookings } = await bookingContainer.items
-      .query<Booking>("SELECT * FROM c ORDER BY c.date DESC, c.startTime DESC")
+      .query<Booking>("SELECT * FROM c ORDER BY c.date DESC, c.sessionStart DESC")
       .fetchAll();
 
     return bookings;
@@ -41,7 +47,7 @@ export async function getBookingsByUser(userId: string): Promise<Booking[]> {
   try {
     const querySpec = {
       query:
-        "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.date DESC, c.startTime DESC",
+        "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.date DESC, c.sessionStart DESC",
       parameters: [{ name: "@userId", value: userId }],
     };
 
@@ -63,7 +69,7 @@ export async function getBookingsByRoom(roomId: string): Promise<Booking[]> {
   try {
     const querySpec = {
       query:
-        "SELECT * FROM c WHERE c.roomId = @roomId ORDER BY c.date DESC, c.startTime DESC",
+        "SELECT * FROM c WHERE c.roomId = @roomId ORDER BY c.date DESC, c.sessionStart DESC",
       parameters: [{ name: "@roomId", value: roomId }],
     };
 
@@ -84,7 +90,7 @@ export async function getBookingsByRoom(roomId: string): Promise<Booking[]> {
 export async function getBookingsByDate(date: string): Promise<Booking[]> {
   try {
     const querySpec = {
-      query: "SELECT * FROM c WHERE c.date = @date ORDER BY c.startTime",
+      query: "SELECT * FROM c WHERE c.date = @date ORDER BY c.sessionStart",
       parameters: [{ name: "@date", value: date }],
     };
 
@@ -106,12 +112,11 @@ export async function createBooking(
   booking: Omit<Booking, "id" | "createdAt" | "updatedAt" | "status">
 ): Promise<{ success: boolean; booking?: Booking; message?: string }> {
   try {
-    // Check for conflicts
     const conflicts = await checkBookingConflict(
       booking.roomId,
       booking.date,
-      booking.startTime,
-      booking.endTime
+      booking.sessionStart,
+      booking.sessionEnd
     );
 
     if (conflicts.length > 0) {
@@ -122,25 +127,19 @@ export async function createBooking(
     }
 
     const newBooking: Booking = {
-      id: `${booking.roomId}-${booking.date}-${booking.startTime}-${Date.now()}`,
+      id: `${booking.roomId}-${booking.date}-${booking.sessionStart}-${Date.now()}`,
       ...booking,
-      status: "pending",
+      status: "booked",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
     const { resource } = await bookingContainer.items.create(newBooking);
 
-    return {
-      success: true,
-      booking: resource,
-    };
+    return { success: true, booking: resource };
   } catch (error) {
     console.error("Create booking error:", error);
-    return {
-      success: false,
-      message: "Gagal membuat booking",
-    };
+    return { success: false, message: "Gagal membuat booking" };
   }
 }
 
@@ -150,8 +149,8 @@ export async function createBooking(
 export async function checkBookingConflict(
   roomId: string,
   date: string,
-  startTime: string,
-  endTime: string,
+  sessionStart: number,
+  sessionEnd: number,
   excludeBookingId?: string
 ): Promise<Booking[]> {
   try {
@@ -159,17 +158,17 @@ export async function checkBookingConflict(
       SELECT * FROM c 
       WHERE c.roomId = @roomId 
       AND c.date = @date 
-      AND c.status IN ('pending', 'approved')
+      AND c.status IN ('booked', 'completed')
       AND (
-        (c.startTime < @endTime AND c.endTime > @startTime)
+        (c.sessionStart < @sessionEnd AND c.sessionEnd > @sessionStart)
       )
     `;
 
-    const parameters: any[] = [
-      { name: "@roomId", value: roomId },
-      { name: "@date", value: date },
-      { name: "@startTime", value: startTime },
-      { name: "@endTime", value: endTime },
+    const parameters: QueryParameter[] = [
+      { name: "@roomId",       value: roomId },
+      { name: "@date",         value: date },
+      { name: "@sessionStart", value: sessionStart },
+      { name: "@sessionEnd",   value: sessionEnd },
     ];
 
     if (excludeBookingId) {
@@ -177,10 +176,8 @@ export async function checkBookingConflict(
       parameters.push({ name: "@excludeBookingId", value: excludeBookingId });
     }
 
-    const querySpec = { query, parameters };
-
     const { resources: bookings } = await bookingContainer.items
-      .query<Booking>(querySpec)
+      .query<Booking>({ query, parameters })
       .fetchAll();
 
     return bookings;
@@ -195,9 +192,7 @@ export async function checkBookingConflict(
  */
 export async function updateBookingStatus(
   bookingId: string,
-  status: Booking["status"],
-  approvedBy?: string,
-  rejectedReason?: string
+  status: Booking["status"]
 ): Promise<{ success: boolean; message?: string }> {
   try {
     const { resource: booking } = await bookingContainer
@@ -208,21 +203,11 @@ export async function updateBookingStatus(
       return { success: false, message: "Booking tidak ditemukan" };
     }
 
-    const updates: Partial<Booking> = {
+    const updatedBooking: Booking = {
+      ...booking,
       status,
       updatedAt: new Date().toISOString(),
     };
-
-    if (status === "approved" && approvedBy) {
-      updates.approvedBy = approvedBy;
-      updates.approvedAt = new Date().toISOString();
-    }
-
-    if (status === "rejected" && rejectedReason) {
-      updates.rejectedReason = rejectedReason;
-    }
-
-    const updatedBooking = { ...booking, ...updates };
 
     await bookingContainer.item(bookingId, bookingId).replace(updatedBooking);
 

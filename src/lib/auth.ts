@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "mahasiswa";
+export type UserRole = "admin" | "student";
 
 export type User = {
   email?: string;
@@ -7,6 +7,7 @@ export type User = {
   password: string;
   role: UserRole;
   name: string;
+  class?: string;
 };
 
 const users: User[] = [
@@ -20,7 +21,7 @@ const users: User[] = [
   {
     nim: "2341720024",
     password: "2341720024",
-    role: "mahasiswa",
+    role: "student",
     name: "Moch. A.B.A",
   },
 ];
@@ -35,8 +36,8 @@ export function login(identifier: string, password: string) {
       );
     }
 
-    // Login mahasiswa → NIM + NIM
-    if (u.role === "mahasiswa") {
+    // Login student → NIM + NIM
+    if (u.role === "student") {
       return (
         u.nim === identifier &&
         u.password === password
@@ -55,6 +56,11 @@ export function login(identifier: string, password: string) {
     localStorage.setItem("userId", user.nip || "");
   } else {
     localStorage.setItem("userId", user.nim || "");
+  }
+
+  // Set role cookie for server-side middleware auth
+  if (typeof window !== "undefined") {
+    document.cookie = "role=" + user.role + "; path=/; max-age=86400";
   }
 
   return user;
@@ -88,6 +94,10 @@ export function getUserInfo(): {
 
 export function logout() {
   localStorage.clear();
+  // Clear role cookie
+  if (typeof window !== "undefined") {
+    document.cookie = "role=; path=/; max-age=0";
+  }
 }
 
 export function changePassword(

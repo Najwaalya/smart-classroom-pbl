@@ -9,6 +9,7 @@ interface SlotInfoModalProps {
   day: string;
   slot: typeof TIME_SLOTS[0];
   onClose: () => void;
+  canEdit?: boolean;
 }
 
 export function SlotInfoModal({
@@ -16,6 +17,7 @@ export function SlotInfoModal({
   day,
   slot,
   onClose,
+  canEdit = false,
 }: SlotInfoModalProps) {
   const dayLabel = getDayLabel(day);
 

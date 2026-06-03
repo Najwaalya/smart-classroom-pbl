@@ -17,8 +17,8 @@
 // =====================================================
 // WIFI CONFIGURATION
 // =====================================================
-const char* WIFI_SSID = "HURA HURA";
-const char* WIFI_PASSWORD = "sarinanda";
+const char* WIFI_SSID = "Juaa";
+const char* WIFI_PASSWORD = "najwa123";
 
 // =====================================================
 // AZURE IOT HUB CONFIGURATION
@@ -32,7 +32,7 @@ const char* DEVICE_ID = "esp32-smartclass-ti3b";
 // SAS TOKEN
 // =====================================================
 const char* SAS_TOKEN =
-"SharedAccessSignature sr=iothub-smart-classroom.azure-devices.net%2Fdevices%2Fesp32-smartclass-ti3b&sig=NxWKU%2BGuBxTBFb8Myf6BLJhTY10P6ISF0UBVWDZ7iOI%3D&se=1778601599";
+"SharedAccessSignature sr=iothub-smart-classroom.azure-devices.net%2Fdevices%2Fesp32-smartclass-ti3b&sig=BrGTFS4%2BydWfGdumrDUr4G4KKHN0koLcFGgZL3yVB84%3D&se=1778671410";
 
 // =====================================================
 // MQTT CLIENT
@@ -53,8 +53,7 @@ float humidity = 0.0;
 
 int peopleCount = 0;
 
-int motionCount = 0;
-float motionDuration = 0.0;
+bool motionDetected = false;
 
 // =====================================================
 // PIR VARIABLES
@@ -307,23 +306,22 @@ void sendTelemetry() {
   // =========================================
   StaticJsonDocument<512> doc;
 
-  doc["device_id"] = DEVICE_ID;
-  doc["room"] = "RT_5B";
+  doc["deviceId"] = DEVICE_ID;
+  doc["roomId"] = "LSI1_6T";
 
   doc["temperature"] = temperature;
   doc["humidity"] = humidity;
 
-  doc["people_count"] = peopleCount;
+  doc["peopleCount"] = peopleCount;
 
-  doc["motion_count"] = motionCount;
-  doc["motion_duration"] = motionDuration;
+  doc["motionDetected"] = digitalRead(PIR_PIN);
 
-  doc["room_status"] = roomStatus;
+  doc["roomStatus"] = roomStatus;
 
-  doc["led_status"] =
+  doc["ledStatus"] =
     (peopleCount > 0)
     ? "RED"
-    : "GREEN";
+  : "GREEN";
 
   // =========================================
   // SERIALIZE JSON
@@ -423,32 +421,16 @@ void loop() {
   // =========================================
   // PIR MOTION DETECTION
   // =========================================
-  if (
-    motion == HIGH &&
-    lastMotion == LOW &&
-    millis() - lastMotionTime > motionCooldown
-  ) {
 
+  int motion = digitalRead(PIR_PIN);
+
+  bool motionDetected = (motion == HIGH);
+
+  if (motionDetected) {
     Serial.println("[PIR] Motion detected");
-
-    motionCount++;
-
-    motionStart = millis();
-    lastMotionTime = millis();
+  } else {
+    Serial.println("[PIR] No motion");
   }
-
-  // Motion stopped
-  if (motion == LOW && lastMotion == HIGH) {
-
-    motionDuration =
-      (millis() - motionStart) / 1000.0;
-
-    Serial.print("[PIR] Motion duration: ");
-    Serial.print(motionDuration);
-    Serial.println(" sec");
-  }
-
-  lastMotion = motion;
 
   // =========================================
   // PEOPLE COUNT
@@ -534,10 +516,12 @@ void loop() {
   // SEND DATA EVERY 5 SECONDS
   // =========================================
   if (millis() - lastSend >= sendInterval) {
-
     lastSend = millis();
 
     readDHT();
+
+    bool motionDetected =
+      (digitalRead(PIR_PIN) == HIGH);
 
     Serial.println();
     Serial.println("=================================");
@@ -547,12 +531,13 @@ void loop() {
     Serial.print("People Count : ");
     Serial.println(peopleCount);
 
-    Serial.print("Motion Count : ");
-    Serial.println(motionCount);
+    Serial.print("Motion Status : ");
 
-    Serial.print("Motion Duration : ");
-    Serial.print(motionDuration);
-    Serial.println(" sec");
+    if (motionDetected) {
+      Serial.println("DETECTED");
+    } else {
+      Serial.println("NO MOTION");
+    }
 
     Serial.print("Temperature : ");
     Serial.print(temperature);
@@ -576,4 +561,3 @@ void loop() {
   }
 
   delay(50);
-} 
