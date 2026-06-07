@@ -32,7 +32,7 @@ const char* DEVICE_ID = "esp32-smartclass-ti3b";
 // SAS TOKEN
 // =====================================================
 const char* SAS_TOKEN =
-"SharedAccessSignature sr=iothub-smart-classroom.azure-devices.net%2Fdevices%2Fesp32-smartclass-ti3b&sig=BrGTFS4%2BydWfGdumrDUr4G4KKHN0koLcFGgZL3yVB84%3D&se=1778671410";
+"SharedAccessSignature sr=iothub-smart-classroom.azure-devices.net%2Fdevices%2Fesp32-smartclass-ti3b&sig=9TEgBKsjEQi0R89gaCQs%2FaKNhmKe5ArAC6uLKeOwIyg%3D&se=1780897842";
 
 // =====================================================
 // MQTT CLIENT
@@ -64,6 +64,8 @@ unsigned long motionStart = 0;
 unsigned long lastMotionTime = 0;
 
 const unsigned long motionCooldown = 3000;
+unsigned long lastPirPrint = 0;
+const unsigned long pirPrintInterval = 3000; // 3 detik
 
 // =====================================================
 // PEOPLE COUNT VARIABLES
@@ -304,10 +306,10 @@ void sendTelemetry() {
   // =========================================
   // CREATE JSON
   // =========================================
-  StaticJsonDocument<512> doc;
+  JsonDocument doc;
 
   doc["deviceId"] = DEVICE_ID;
-  doc["roomId"] = "LSI1_6T";
+  doc["roomId"] = "RT5-5T";
 
   doc["temperature"] = temperature;
   doc["humidity"] = humidity;
@@ -416,20 +418,27 @@ void loop() {
   bool outside = (digitalRead(IR1_PIN) == LOW);
   bool inside  = (digitalRead(IR2_PIN) == LOW);
 
-  bool motion = digitalRead(PIR_PIN);
-
   // =========================================
   // PIR MOTION DETECTION
   // =========================================
+  bool pirRaw = (digitalRead(PIR_PIN) == HIGH);
+  unsigned long nowMs = millis();
 
-  int motion = digitalRead(PIR_PIN);
+  if (pirRaw && (nowMs - lastMotionTime >= motionCooldown)) {
+    motionDetected = true;
+    lastMotionTime = nowMs;
+  } else if (!pirRaw && motionDetected && (nowMs - lastMotionTime >= motionCooldown)) {
+    motionDetected = false;
+  }
 
-  bool motionDetected = (motion == HIGH);
-
-  if (motionDetected) {
-    Serial.println("[PIR] Motion detected");
-  } else {
-    Serial.println("[PIR] No motion");
+  // Print status PIR setiap 3 detik
+  if (nowMs - lastPirPrint >= pirPrintInterval) {
+    lastPirPrint = nowMs;
+    if (motionDetected) {
+      Serial.println("[PIR] Motion detected");
+    } else {
+      Serial.println("[PIR] No motion");
+    }
   }
 
   // =========================================
@@ -520,9 +529,6 @@ void loop() {
 
     readDHT();
 
-    bool motionDetected =
-      (digitalRead(PIR_PIN) == HIGH);
-
     Serial.println();
     Serial.println("=================================");
     Serial.println(" SMART CLASS STATUS");
@@ -561,3 +567,4 @@ void loop() {
   }
 
   delay(50);
+}
