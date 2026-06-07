@@ -38,6 +38,7 @@ export default function SchedulePage() {
   const [modalState, setModalState] = useState<ModalState>({ open: false });
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirm>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // ── MAHASISWA state ──────────────────────────────
   const [selectedFloor, setSelectedFloor] = useState<string>("5");
@@ -132,29 +133,39 @@ export default function SchedulePage() {
       isRescheduled: false,
     };
 
-    setModalState({ open: false });
-
     try {
       if (modalState.open && modalState.mode === "edit" && originalEntry && (originalEntry as ScheduleEntry & { id?: string }).id) {
-        await fetch(`/api/schedules/${(originalEntry as ScheduleEntry & { id: string }).id}`, {
+        const id = (originalEntry as ScheduleEntry & { id: string }).id;
+        // include id in body as well to make caller explicit
+        const bodyWithId = { ...newEntry, id };
+        const res = await fetch(`/api/schedules/${encodeURIComponent(id)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(newEntry),
+          body: JSON.stringify(bodyWithId),
         });
+        const json = await res.json();
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.message ?? "Gagal memperbarui jadwal");
+        }
         setSuccessMsg(`Jadwal di ruangan "${newEntry.roomId}" berhasil diperbarui.`);
       } else {
-        await fetch("/api/schedules", {
+        const res = await fetch("/api/schedules", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(newEntry),
         });
+        const json = await res.json();
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.message ?? "Gagal menambah jadwal");
+        }
         setSuccessMsg(`Jadwal di ruangan "${newEntry.roomId}" berhasil ditambahkan.`);
       }
 
-      const res = await fetch("/api/schedules");
-      const json = await res.json();
-      if (json.success && Array.isArray(json.schedules)) {
-        const entries: ScheduleEntry[] = json.schedules.map((c: Record<string, unknown>) => ({
+      // Refresh schedules from backend and close modal only after success
+      const res2 = await fetch("/api/schedules");
+      const json2 = await res2.json();
+      if (json2.success && Array.isArray(json2.schedules)) {
+        const entries: ScheduleEntry[] = json2.schedules.map((c: Record<string, unknown>) => ({
           id: String(c.id ?? ""),
           room: String(c.roomId ?? c.room ?? ""),
           day: String(c.day ?? ""),
@@ -164,8 +175,12 @@ export default function SchedulePage() {
         setAllSchedules(entries);
         setSchedules(entries);
       }
+
+      // Close modal after refresh so UI shows updated data immediately
+      setModalState({ open: false });
     } catch (err) {
       console.error("[schedule] Gagal sync ke Cosmos:", err);
+      setError(String((err as any)?.message ?? "Gagal menyimpan perubahan"));
     }
 
     setTimeout(() => setSuccessMsg(null), 3000);
@@ -329,6 +344,25 @@ export default function SchedulePage() {
             allSchedules={allSchedules}
             onSave={handleSave}
             onClose={() => setModalState({ open: false })}
+            onDeleted={async () => {
+              try {
+                const res = await fetch("/api/schedules");
+                const json = await res.json();
+                if (json.success && Array.isArray(json.schedules)) {
+                  const entries: ScheduleEntry[] = json.schedules.map((c: Record<string, unknown>) => ({
+                    id: String(c.id ?? ""),
+                    room: String(c.roomId ?? c.room ?? ""),
+                    day: String(c.day ?? ""),
+                    start: String(c.startTime ?? c.sessionStart ?? c.start ?? ""),
+                    end: String(c.endTime ?? c.sessionEnd ?? c.end ?? ""),
+                  }));
+                  setAllSchedules(entries);
+                  setSchedules(entries);
+                }
+              } catch (err) {
+                console.error("Gagal refresh jadwal setelah hapus:", err);
+              }
+            }}
           />
         )}
 

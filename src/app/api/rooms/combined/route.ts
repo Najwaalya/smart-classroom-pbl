@@ -9,7 +9,9 @@ import { roomContainer, sensorContainer } from "@/lib/cosmos";
 
 interface CosmosRoom {
   id: string;
+  roomId?: string;
   roomName?: string;
+  name?: string;
   wing?: string | null;
   floor?: string | number;
 }
@@ -57,6 +59,17 @@ function deriveStatus(
   return "empty";
 }
 
+function roomMatchesSensor(roomId: string, sensorRoomId?: string) {
+  if (!sensorRoomId) return false;
+  const normalizedRoomId = roomId.trim().toLowerCase();
+  const normalizedSensorRoomId = sensorRoomId.trim().toLowerCase();
+
+  if (normalizedRoomId === normalizedSensorRoomId) return true;
+  if (normalizedSensorRoomId.startsWith(`${normalizedRoomId}-`)) return true;
+  if (normalizedRoomId.startsWith(`${normalizedSensorRoomId}-`)) return true;
+  return false;
+}
+
 export async function GET() {
   try {
     // 1. Ambil semua rooms
@@ -64,12 +77,12 @@ export async function GET() {
       .query<CosmosRoom>("SELECT * FROM c ORDER BY c.id ASC")
       .fetchAll();
 
-    // 2. Ambil sensor terbaru per ruangan (top 100, sort desc timestamp)
+    // 2. Ambil sensor terbaru (order by timestamp desc), lalu map ke rooms secara fleksibel
     let sensors: CosmosSensor[] = [];
     try {
       const sensorResult = await sensorContainer.items
         .query<CosmosSensor>(
-          "SELECT * FROM c ORDER BY c.timestamp DESC OFFSET 0 LIMIT 100"
+          "SELECT * FROM c ORDER BY c.timestamp DESC OFFSET 0 LIMIT 200"
         )
         .fetchAll();
 
@@ -87,18 +100,35 @@ export async function GET() {
       }
     }
 
-    // 3. Buat map sensor terbaru per roomId
+    // 3. Buat map sensor terbaru per roomId, dengan mapping fleksibel
     const latestSensorMap = new Map<string, CosmosSensor>();
+    const unmatchedRooms = new Set(
+      rooms.map((room) => room.roomId?.trim() ?? room.id)
+    );
+
     for (const s of sensors) {
-      if (!latestSensorMap.has(s.roomId)) {
-        latestSensorMap.set(s.roomId, s);
+      if (unmatchedRooms.size === 0) break;
+      for (const roomId of Array.from(unmatchedRooms)) {
+        if (roomMatchesSensor(roomId, s.roomId)) {
+          latestSensorMap.set(roomId, s);
+          unmatchedRooms.delete(roomId);
+        }
       }
     }
 
+    const MAX_SENSOR_AGE_MS = 1000 * 60 * 5; // 5 menit (stale sensor threshold)
+    const isSensorFresh = (timestamp?: string | null) => {
+      if (!timestamp) return false;
+      const time = new Date(timestamp).getTime();
+      return !Number.isNaN(time) && Date.now() - time < MAX_SENSOR_AGE_MS;
+    };
+
     // 4. Gabungkan room + sensor
     const combined = rooms.map((room) => {
-      const sensor = latestSensorMap.get(room.id);
-      const hasSensor = Boolean(sensor?.timestamp);
+      const roomLookupId = room.roomId?.trim() || room.id;
+      const rawSensor = latestSensorMap.get(roomLookupId);
+      const sensor = rawSensor && isSensorFresh(rawSensor.timestamp) ? rawSensor : undefined;
+      const hasSensor = Boolean(sensor);
       const dhtWarning =
         sensor &&
         (sensor.temperature > 28 || sensor.humidity < 40 || sensor.humidity > 60);
@@ -109,8 +139,15 @@ export async function GET() {
           )
         : 0;
 
+      const displayName = sensor?.roomId && roomMatchesSensor(roomLookupId, sensor.roomId)
+        ? sensor.roomId
+        : room.roomId || room.roomName || room.name || room.id;
+
       return {
         id: room.id,
+        roomId: room.roomId ?? room.id,
+        name: displayName,
+        roomName: room.roomName,
         status: deriveStatus(sensor),
         students: sensor?.peopleCount ?? 0,
         temp: sensor?.temperature ?? 0,

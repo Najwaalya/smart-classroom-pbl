@@ -6,9 +6,9 @@ interface SearchFilterProps {
   search: string;
   setSearch: (value: string) => void;
 
-  filter: "all" | "active" | "empty" | "uncertain";
+  filter: "all" | "active" | "scheduled" | "uncertain" | "empty" | "booked";
   setFilter: (
-    value: "all" | "active" | "empty" | "uncertain"
+    value: "all" | "active" | "scheduled" | "uncertain" | "empty" | "booked"
   ) => void;
 }
 
@@ -21,7 +21,7 @@ export default function SearchFilter({
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2">
       <div className="flex bg-white/60 backdrop-blur-sm p-1 rounded-xl shadow-sm border border-white/50 overflow-x-auto">
-        {(["all", "active", "empty", "uncertain"] as const).map((f) => (
+        {(["all", "active", "scheduled", "uncertain", "empty", "booked"] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -34,10 +34,14 @@ export default function SearchFilter({
             {f === "all"
               ? "SEMUA"
               : f === "active"
-              ? "AKTIF"
+              ? "ACTIVE"
+              : f === "scheduled"
+              ? "SCHEDULED"
+              : f === "uncertain"
+              ? "UNCERTAIN"
               : f === "empty"
-              ? "KOSONG"
-              : "TIDAK PASTI"}
+              ? "EMPTY"
+              : "BOOKED"}
           </button>
         ))}
       </div>

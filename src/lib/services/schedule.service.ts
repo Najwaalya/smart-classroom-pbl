@@ -111,21 +111,48 @@ export async function getSchedulesByDay(day: string): Promise<Schedule[]> {
  */
 export async function createSchedule(
   schedule: Omit<Schedule, "id" | "createdAt" | "updatedAt">
-): Promise<{ success: boolean; schedule?: Schedule; message?: string }> {
+): Promise<{ success: boolean; schedules?: Schedule[]; message?: string }> {
   try {
-    const newSchedule: Schedule = {
-      id: `${schedule.roomId}-${schedule.day}-${schedule.sessionStart}-${Date.now()}`,
-      ...schedule,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const created: Schedule[] = [];
 
-    const { resource } = await scheduleContainer.items.create(newSchedule);
+    // Ensure start and end are numbers and define loop bounds
+    const start = Number(schedule.sessionStart ?? 0);
+    const end = Number(schedule.sessionEnd ?? start);
 
-    return {
-      success: true,
-      schedule: resource,
-    };
+    if (isNaN(start) || isNaN(end) || start > end) {
+      // Fallback: create a single entry using provided value
+      const newSchedule: Schedule = {
+        id: `${schedule.roomId}-${schedule.day}-${schedule.sessionStart}-${Date.now()}`,
+        ...schedule,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const { resource } = await scheduleContainer.items.create(newSchedule);
+      return { success: true, schedules: [resource] };
+    }
+
+    // Loop from start to end inclusive and create one document per hour slot
+    for (let hour = start; hour <= end; hour++) {
+      const slotSchedule: Schedule = {
+        id: `${schedule.roomId}-${schedule.day}-${hour}-${Date.now()}-${hour}`,
+        roomId: schedule.roomId,
+        day: schedule.day,
+        sessionStart: hour,
+        sessionEnd: hour,
+        subject: schedule.subject,
+        lecturer: schedule.lecturer,
+        class: schedule.class,
+        semester: schedule.semester,
+        academicYear: schedule.academicYear,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const { resource } = await scheduleContainer.items.create(slotSchedule);
+      created.push(resource);
+    }
+
+    return { success: true, schedules: created };
   } catch (error) {
     console.error("Create schedule error:", error);
     return {
@@ -159,13 +186,26 @@ export async function updateSchedule(
 
     const schedule = schedules[0];
 
-    const updatedSchedule = {
+    const updatedSchedule: Schedule = {
       ...schedule,
       ...updates,
       updatedAt: new Date().toISOString(),
-    };
+    } as Schedule;
 
-    await scheduleContainer.item(schedule.id, schedule.roomId).replace(updatedSchedule);
+    // If partition key (roomId) is changing, Cosmos replace will fail because the
+    // partition key value in the document must match the request partition key.
+    // To handle room moves, delete the old item and create a new one under the
+    // new partition key value.
+    if (updates.roomId && updates.roomId !== schedule.roomId) {
+      console.log("[updateSchedule] Partition key (roomId) changed. Recreating item under new partition key.");
+      // delete old
+      await scheduleContainer.item(schedule.id, schedule.roomId).delete();
+      // create new under new partition key
+      await scheduleContainer.items.create(updatedSchedule);
+    } else {
+      // same partition key — safe to replace
+      await scheduleContainer.item(schedule.id, schedule.roomId).replace(updatedSchedule);
+    }
 
     return { success: true };
   } catch (error) {

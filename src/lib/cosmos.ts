@@ -1,40 +1,91 @@
-import { CosmosClient } from "@azure/cosmos";
+/**
+ * Azure Cosmos DB Connection Module
+ * ===================================
+ * Koneksi dinamis ke Azure Cosmos DB menggunakan kredensial dari .env.local
+ * Tidak ada hardcoded endpoint atau key di file ini.
+ */
 
-// Ensure environment variables are loaded
-const endpoint = process.env.COSMOS_ENDPOINT;
-const key = process.env.COSMOS_KEY;
-const databaseId = process.env.COSMOS_DATABASE || "smartclassdb";
+import { CosmosClient, Database } from "@azure/cosmos";
 
-if (!endpoint || !key) {
-  throw new Error(
-    "COSMOS_ENDPOINT and COSMOS_KEY must be set in environment variables"
-  );
+// ==========================================
+// Environment Variables Validation
+// ==========================================
+
+const endpoint = process.env.COSMOS_ENDPOINT?.trim();
+const key = process.env.COSMOS_KEY?.trim();
+const databaseId = process.env.COSMOS_DATABASE?.trim() || "smartclassdb";
+
+// Validasi ketat: endpoint dan key harus ada
+if (!endpoint) {
+  const msg =
+    "[Cosmos DB] FATAL: process.env.COSMOS_ENDPOINT tidak ditemukan atau kosong. " +
+    "Pastikan variabel COSMOS_ENDPOINT telah diset di .env.local";
+  console.error(msg);
+  throw new Error(msg);
 }
 
-const client = new CosmosClient({
+if (!key) {
+  const msg =
+    "[Cosmos DB] FATAL: process.env.COSMOS_KEY tidak ditemukan atau kosong. " +
+    "Pastikan variabel COSMOS_KEY telah diset di .env.local";
+  console.error(msg);
+  throw new Error(msg);
+}
+
+console.log(
+  `[Cosmos DB] Menghubungkan ke Azure Cosmos DB...\n` +
+  `  Endpoint: ${endpoint}\n` +
+  `  Database: ${databaseId}`
+);
+
+// ==========================================
+// Cosmos DB Client Initialization
+// ==========================================
+
+export const client = new CosmosClient({
   endpoint,
   key,
 });
 
-const database = client.database(databaseId);
+export const database: Database = client.database(databaseId);
 
-export const bookingContainer =
-  database.container("bookings");
+console.log("[Cosmos DB] Koneksi berhasil diinisialisasi.");
 
-export const sessionContainer =
-  database.container("sessions");
+// ==========================================
+// Container Exports
+// Mengakses kontainer secara instan tanpa cache
+// ==========================================
 
-export const statusLogContainer =
-  database.container("room_status_logs");
+export const userContainer = database.container("users");
+export const scheduleContainer = database.container("schedules");
+export const sensorContainer = database.container("sensors_readings");
+export const bookingContainer = database.container("bookings");
+export const roomContainer = database.container("rooms");
+export const statusLogContainer = database.container("room_status_logs");
+export const sessionContainer = database.container("class_sessions");
 
-export const roomContainer =
-  database.container("rooms");
+// ==========================================
+// Helper Functions
+// ==========================================
 
-export const scheduleContainer =
-  database.container("schedules");
+/**
+ * Mendapatkan referensi ke kontainer tertentu
+ * @param containerName Nama kontainer
+ * @returns Referensi kontainer
+ */
+export function getContainer(containerName: string) {
+  return database.container(containerName);
+}
 
-export const sensorContainer =
-  database.container("sensors_readings");
-
-export const userContainer =
-  database.container("users");
+/**
+ * Mendapatkan informasi koneksi Cosmos DB
+ * @returns Object berisi endpoint, database id, dan status
+ */
+export function getConnectionInfo() {
+  return {
+    endpoint,
+    database: databaseId,
+    connected: true,
+    timestamp: new Date().toISOString(),
+  };
+}

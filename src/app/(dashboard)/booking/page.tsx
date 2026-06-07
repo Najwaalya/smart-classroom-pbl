@@ -28,6 +28,7 @@ import {
   FLOORS,
   TIME_SLOTS,
   toMin,
+  FLOOR_SUFFIX,
   getRoomsForFloor,
   getScheduleForSlot,
   getCurrentDay,
@@ -74,6 +75,13 @@ interface RoomData {
     | "uncertain";
 }
 
+interface RoomOption {
+  id: string;
+  name: string;
+  wing?: string | null;
+  floor?: string | number | null;
+}
+
 export default function BookingPage() {
 
   // =========================================
@@ -104,6 +112,39 @@ export default function BookingPage() {
   } = useRoomData() as {
     rooms: RoomData[];
   };
+
+  const [roomOptions, setRoomOptions] =
+    useState<RoomOption[]>([]);
+  const [roomsFetchLoading, setRoomsFetchLoading] =
+    useState<boolean>(true);
+
+  useEffect(() => {
+    const loadRooms = async () => {
+      setRoomsFetchLoading(true);
+      try {
+        const response = await fetch("/api/rooms", {
+          cache: "no-store",
+        });
+        const json = await response.json();
+
+        if (
+          response.ok &&
+          json?.success === true &&
+          Array.isArray(json.rooms)
+        ) {
+          setRoomOptions(json.rooms);
+        } else {
+          setRoomOptions([]);
+        }
+      } catch (_error) {
+        setRoomOptions([]);
+      } finally {
+        setRoomsFetchLoading(false);
+      }
+    };
+
+    loadRooms();
+  }, []);
 
   // =========================================
   // FILTER
@@ -199,25 +240,30 @@ export default function BookingPage() {
   // =========================================
 
   const roomsOnFloor = useMemo(() => {
-    // Jika schedules kosong atau tidak ada room yang match, gunakan rooms dari context
-    const roomsFromSchedules = getRoomsForFloor(selectedFloor, schedules);
-    
-    if (roomsFromSchedules.length > 0) {
-      return roomsFromSchedules;
+    if (roomOptions.length > 0) {
+      const sameFloorRooms = roomOptions
+        .filter((room) => String(room.floor) === selectedFloor)
+        .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
+
+      if (sameFloorRooms.length > 0) {
+        return sameFloorRooms.map((room) => ({
+          id: room.id,
+          label: room.name ?? room.id,
+        }));
+      }
     }
-    
-    // Fallback: gunakan rooms dari RoomDataContext
-    const suffixes = ["_5B", "_6T", "_7T", "_7B", "_8T"];
-    const floorSuffix = selectedFloor === "5" ? "_5B" : 
-                        selectedFloor === "6" ? "_6T" :
-                        selectedFloor === "7" ? "_7" : // Match both _7T and _7B
-                        selectedFloor === "8" ? "_8T" : "";
-    
-    return rooms
-      .map(r => r.id)
-      .filter(id => floorSuffix && id.includes(floorSuffix))
-      .sort();
-  }, [selectedFloor, schedules, rooms]);
+
+    const suffixes = FLOOR_SUFFIX[selectedFloor] || [];
+    if (rooms && rooms.length > 0 && suffixes.length > 0) {
+      return rooms
+        .map((r) => ({ id: r.id, label: r.id }))
+        .filter((room) => suffixes.some((sfx) => room.id.includes(sfx)))
+        .sort((a, b) => a.label.localeCompare(b.label));
+    }
+
+    const roomsFromSchedules = getRoomsForFloor(selectedFloor, schedules);
+    return roomsFromSchedules.map((id) => ({ id, label: id }));
+  }, [selectedFloor, rooms, schedules, roomOptions]);
 
   // =========================================
   // FIND BOOKING SLOT

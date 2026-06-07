@@ -33,6 +33,9 @@ export interface PirSensorData {
 
 export interface Room {
   id: string;
+  roomId?: string;
+  roomName?: string;
+  name?: string;
   status: RoomStatus;
   students: number;
   temp: number;
@@ -94,6 +97,9 @@ export const RoomDataProvider = ({ children }: { children: React.ReactNode }) =>
           // Transform data to match Room interface
           const transformedRooms: Room[] = json.data.map((room: any) => ({
             id: room.id,
+            roomId: room.roomId ?? room.id,
+            roomName: room.roomName,
+            name: room.name ?? room.roomId ?? room.roomName ?? room.id,
             status: room.status || "empty",
             students: room.students ?? 0,
             temp: room.temp ?? 0,
