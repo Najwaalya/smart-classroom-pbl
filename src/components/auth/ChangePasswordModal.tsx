@@ -165,7 +165,7 @@ export default function ChangePasswordModal({
       localStorage.getItem("userId") ||
       "";
 
-    const ok = changePassword(
+    const ok = await changePassword(
       currentIdentifier,
       oldPw,
       newPw
