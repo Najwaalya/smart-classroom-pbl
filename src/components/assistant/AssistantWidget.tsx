@@ -37,7 +37,7 @@ export default function AssistantWidget() {
     const trimmed = query.trim();
     if (!trimmed) return;
 
-    const nextMessages = [...messages, { role: "user", text: trimmed }];
+    const nextMessages: ChatMessage[] = [...messages, { role: "user", text: trimmed }];
     setMessages(nextMessages);
     setQuery("");
     setIsLoading(true);

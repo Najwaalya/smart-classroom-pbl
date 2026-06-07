@@ -67,7 +67,7 @@ export async function POST(request: Request) {
         otpExpiry: null,
         updatedAt: new Date().toISOString(),
       },
-      { partitionKey: user.id }
+      { partitionKey: user.id } as any
     );
 
     return NextResponse.json({

@@ -3,15 +3,19 @@ import { bookingContainer } from "@/lib/cosmos";
 export interface Booking {
   id: string;
   roomId: string;
-  userId: string;
-  userName: string;
-  userNim: string;
-  userClass: string;
+  // Fields sent by BookingForm / booking page
+  bookedById: string;    // userId dari frontend
+  bookedBy: string;      // nama user
+  userId?: string;       // alias opsional
+  userName?: string;     // alias opsional
+  userClass?: string;
   day: string;
-  date: string;
-  bookingDate: string;
-  sessionStart: number;
-  sessionEnd: number;
+  date: string;          // ISO date string (YYYY-MM-DD)
+  startTime: string;     // "07:00"
+  endTime: string;       // "08:40"
+  // Opsional: nomor sesi (jika ada)
+  sessionStart?: number;
+  sessionEnd?: number;
   purpose: string;
   status: "booked" | "cancelled" | "completed";
   createdAt: string;
@@ -25,17 +29,21 @@ interface QueryParameter {
 }
 
 /**
- * Get all bookings
+ * Get all bookings — cross-partition safe
  */
 export async function getAllBookings(): Promise<Booking[]> {
   try {
     const { resources: bookings } = await bookingContainer.items
-      .query<Booking>("SELECT * FROM c ORDER BY c.date DESC, c.sessionStart DESC")
+      .query<Booking>(
+        "SELECT * FROM c ORDER BY c.createdAt DESC",
+        { maxItemCount: -1 }
+      )
       .fetchAll();
 
+    console.log("[getAllBookings] Fetched:", bookings.length, "bookings");
     return bookings;
   } catch (error) {
-    console.error("Get all bookings error:", error);
+    console.error("[getAllBookings] Error:", error);
     return [];
   }
 }
@@ -111,13 +119,28 @@ export async function getBookingsByDate(date: string): Promise<Booking[]> {
 export async function createBooking(
   booking: Omit<Booking, "id" | "createdAt" | "updatedAt" | "status">
 ): Promise<{ success: boolean; booking?: Booking; message?: string }> {
+  console.log("[createBooking] START — payload received:", JSON.stringify(booking, null, 2));
+
   try {
+    // Validasi field wajib
+    if (!booking.roomId || !booking.date || !booking.startTime || !booking.endTime) {
+      console.error("[createBooking] VALIDATION FAILED — missing required fields", {
+        roomId: booking.roomId,
+        date: booking.date,
+        startTime: booking.startTime,
+        endTime: booking.endTime,
+      });
+      return { success: false, message: "Data booking tidak lengkap (roomId/date/startTime/endTime wajib diisi)" };
+    }
+
+    console.log("[createBooking] Checking conflicts for:", booking.roomId, booking.date, booking.startTime, "–", booking.endTime);
     const conflicts = await checkBookingConflict(
       booking.roomId,
       booking.date,
-      booking.sessionStart,
-      booking.sessionEnd
+      booking.startTime,
+      booking.endTime
     );
+    console.log("[createBooking] Conflicts found:", conflicts.length);
 
     if (conflicts.length > 0) {
       return {
@@ -127,19 +150,24 @@ export async function createBooking(
     }
 
     const newBooking: Booking = {
-      id: `${booking.roomId}-${booking.date}-${booking.sessionStart}-${Date.now()}`,
+      id: `booking-${booking.roomId}-${booking.date}-${Date.now()}`,
       ...booking,
+      // pastikan bookedById & bookedBy terisi
+      bookedById: booking.bookedById ?? booking.userId ?? "unknown",
+      bookedBy: booking.bookedBy ?? booking.userName ?? "Unknown User",
       status: "booked",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
+    console.log("[createBooking] Inserting to Cosmos DB:", JSON.stringify(newBooking, null, 2));
     const { resource } = await bookingContainer.items.create(newBooking);
+    console.log("[createBooking] SUCCESS — inserted with id:", resource?.id);
 
     return { success: true, booking: resource };
   } catch (error) {
-    console.error("Create booking error:", error);
-    return { success: false, message: "Gagal membuat booking" };
+    console.error("[createBooking] ERROR:", error);
+    return { success: false, message: "Gagal membuat booking: " + String(error) };
   }
 }
 
@@ -149,8 +177,8 @@ export async function createBooking(
 export async function checkBookingConflict(
   roomId: string,
   date: string,
-  sessionStart: number,
-  sessionEnd: number,
+  startTime: string,
+  endTime: string,
   excludeBookingId?: string
 ): Promise<Booking[]> {
   try {
@@ -160,15 +188,15 @@ export async function checkBookingConflict(
       AND c.date = @date 
       AND c.status IN ('booked', 'completed')
       AND (
-        (c.sessionStart < @sessionEnd AND c.sessionEnd > @sessionStart)
+        (c.startTime < @endTime AND c.endTime > @startTime)
       )
     `;
 
     const parameters: QueryParameter[] = [
-      { name: "@roomId",       value: roomId },
-      { name: "@date",         value: date },
-      { name: "@sessionStart", value: sessionStart },
-      { name: "@sessionEnd",   value: sessionEnd },
+      { name: "@roomId",    value: roomId },
+      { name: "@date",      value: date },
+      { name: "@startTime", value: startTime },
+      { name: "@endTime",   value: endTime },
     ];
 
     if (excludeBookingId) {
@@ -188,20 +216,30 @@ export async function checkBookingConflict(
 }
 
 /**
- * Update booking status
+ * Update booking status — partition-key agnostic
+ * Fetch dulu lewat query untuk dapat roomId & id yang benar,
+ * lalu replace dengan partition key yang sesuai.
  */
 export async function updateBookingStatus(
   bookingId: string,
   status: Booking["status"]
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    const { resource: booking } = await bookingContainer
-      .item(bookingId, bookingId)
-      .read<Booking>();
+    // Query by id — works regardless of partition key (/id or /roomId)
+    const { resources } = await bookingContainer.items
+      .query<Booking>({
+        query: "SELECT * FROM c WHERE c.id = @id",
+        parameters: [{ name: "@id", value: bookingId }],
+      })
+      .fetchAll();
 
-    if (!booking) {
+    if (!resources || resources.length === 0) {
+      console.error("[updateBookingStatus] Booking not found:", bookingId);
       return { success: false, message: "Booking tidak ditemukan" };
     }
+
+    const booking = resources[0];
+    const partitionKey = booking.roomId ?? booking.id;
 
     const updatedBooking: Booking = {
       ...booking,
@@ -209,11 +247,12 @@ export async function updateBookingStatus(
       updatedAt: new Date().toISOString(),
     };
 
-    await bookingContainer.item(bookingId, bookingId).replace(updatedBooking);
+    await bookingContainer.item(booking.id, partitionKey).replace(updatedBooking);
+    console.log("[updateBookingStatus] Updated booking:", bookingId, "→", status);
 
     return { success: true };
   } catch (error) {
-    console.error("Update booking status error:", error);
+    console.error("[updateBookingStatus] ERROR:", error);
     return { success: false, message: "Gagal mengupdate status booking" };
   }
 }
@@ -228,16 +267,33 @@ export async function cancelBooking(
 }
 
 /**
- * Delete booking
+ * Delete booking — partition-key agnostic
  */
 export async function deleteBooking(
   bookingId: string
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    await bookingContainer.item(bookingId, bookingId).delete();
+    // Query dulu untuk dapat dokumen asli (termasuk roomId sebagai potential partition key)
+    const { resources } = await bookingContainer.items
+      .query<Booking>({
+        query: "SELECT * FROM c WHERE c.id = @id",
+        parameters: [{ name: "@id", value: bookingId }],
+      })
+      .fetchAll();
+
+    if (!resources || resources.length === 0) {
+      console.error("[deleteBooking] Booking not found:", bookingId);
+      return { success: false, message: "Booking tidak ditemukan" };
+    }
+
+    const booking = resources[0];
+    const partitionKey = booking.roomId ?? booking.id;
+
+    await bookingContainer.item(booking.id, partitionKey).delete();
+    console.log("[deleteBooking] Deleted booking:", bookingId);
     return { success: true };
   } catch (error) {
-    console.error("Delete booking error:", error);
+    console.error("[deleteBooking] ERROR:", error);
     return { success: false, message: "Gagal menghapus booking" };
   }
 }

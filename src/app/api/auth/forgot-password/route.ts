@@ -59,7 +59,7 @@ export async function POST(request: Request) {
         otpExpiry: expiry,
         updatedAt: new Date().toISOString(),
       },
-      { partitionKey: user.id }
+      { partitionKey: user.id } as any
     );
 
     const emailUser = process.env.EMAIL_SERVER_USER;

@@ -129,7 +129,7 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
   const allSchedules = useMemo(() => getAllSchedules(id, scheduleData), [id, scheduleData]);
   const currentBooking = getBooking(id);
   const bookingEntries = currentBooking
-    ? [{ roomId: id, day: currentBooking.day, startTime: currentBooking.startTime, endTime: currentBooking.endTime }]
+    ? [{ roomId: id, day: currentBooking.day ?? "", startTime: currentBooking.startTime, endTime: currentBooking.endTime }]
     : [];
 
   const computedLastMotionMinutes = useMemo(() => {

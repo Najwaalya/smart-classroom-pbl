@@ -1,4 +1,27 @@
-function deriveRoomStatus(
+import { roomContainer } from "@/lib/cosmos";
+
+export async function getRoomById(id: string) {
+  try {
+    const querySpec = {
+      query: "SELECT * FROM c WHERE c.id = @id",
+      parameters: [{ name: "@id", value: id }],
+    };
+    const { resources } = await roomContainer.items.query(querySpec).fetchAll();
+    if (!resources || resources.length === 0) return null;
+    const resource = resources[0];
+    return {
+      id: resource.id,
+      name: resource.roomName || resource.name || resource.id,
+      wing: resource.wing ?? null,
+      floor: resource.floor ?? null,
+    };
+  } catch (error) {
+    console.error(`getRoomById error for ${id}:`, error);
+    return null;
+  }
+}
+
+export function deriveRoomStatus(
   motionDuration: number,
   peopleCount: number
 ): "active" | "uncertain" | "empty" {

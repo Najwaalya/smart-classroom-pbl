@@ -3,13 +3,14 @@
 import { useState, useEffect } from "react";
 import { X, Save, AlertTriangle, Plus } from "lucide-react";
 import { ScheduleEntry } from "@/lib/schedule";
-import { DAYS, TIME_SLOTS, toMin } from "@/lib/schedule-utils";
+import { DAYS, TIME_SLOTS, toMin, normalizeDayKey } from "@/lib/schedule-utils";
 
 export interface ScheduleFormData {
   room: string;
   day: string;
   start: string;
   end: string;
+  className: string;
 }
 
 interface ScheduleCRUDModalProps {
@@ -23,15 +24,6 @@ interface ScheduleCRUDModalProps {
   onDeleted?: () => void;
 }
 
-// Room suggestions
-const ROOM_SUGGESTIONS = [
-  "RT01_5B", "RT02_5B", "RT03_5B", "RT04_5B", "RT05_5B", "RT06_5B", "RT07_5B",
-  "LSI1_6T", "LSI2_6T", "LPY3_6T",
-  "LAI1_7T", "LIG2_7T", "LKJ2_7T", "LKJ3_7T", "LERP_7T",
-  "LPR1_7B", "LPR2_7B", "LPR3_7B", "LPR4_7B", "LPR5_7B", "LPR6_7B",
-  "RT09_8T", "RT10_8T", "RT11_8T", "RT12_8T",
-];
-
 function timeToMinutes(t: string) {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
@@ -44,26 +36,52 @@ export default function ScheduleCRUDModal({
   allSchedules,
   onSave,
   onClose,
+  onDeleted,
 }: ScheduleCRUDModalProps) {
   const [form, setForm] = useState<ScheduleFormData>({
     room: initialData?.room ?? "",
-    day: initialData?.day ?? initialDay ?? "Monday",
+    day: normalizeDayKey(initialData?.day ?? initialDay ?? "Monday"),
     start: initialData?.start ?? "07:00",
     end: initialData?.end ?? "08:40",
+    className: initialData?.class ?? (initialData as any)?.className ?? "",
   });
 
   const [error, setError] = useState<string | null>(null);
-  const [roomSuggestions, setRoomSuggestions] = useState<string[]>([]);
-  const [showRoomDropdown, setShowRoomDropdown] = useState(false);
+  const [rooms, setRooms] = useState<{ id: string; name: string }[]>([]);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const selectedDayLabel = DAYS.find(d => d.key === form.day)?.label ?? form.day;
+
+  // Fetch active rooms from Cosmos DB
+  useEffect(() => {
+    async function fetchRooms() {
+      setIsLoadingRooms(true);
+      try {
+        const res = await fetch("/api/rooms");
+        const json = await res.json();
+        if (json.success && Array.isArray(json.rooms)) {
+          setRooms(json.rooms);
+          // Set default room if none selected and in "add" mode
+          if (mode === "add" && !form.room && json.rooms.length > 0) {
+            setForm(f => ({ ...f, room: json.rooms[0].id }));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch rooms:", err);
+      } finally {
+        setIsLoadingRooms(false);
+      }
+    }
+    fetchRooms();
+  }, [mode]);
 
   // Validate + conflict check
   function validate(): string | null {
     if (!form.room.trim()) return "Nama ruangan wajib diisi.";
     if (!form.day) return "Hari wajib dipilih.";
     if (!form.start || !form.end) return "Jam mulai dan selesai wajib diisi.";
+    if (!form.className.trim()) return "Kelas wajib diisi.";
     if (timeToMinutes(form.start) >= timeToMinutes(form.end)) {
       return "Jam selesai harus lebih besar dari jam mulai.";
     }
@@ -78,7 +96,7 @@ export default function ScheduleCRUDModal({
     const conflict = allSchedules.find(s => {
       const key = `${s.room}_${s.day}_${s.start}_${s.end}`;
       if (excludeKey && key === excludeKey) return false;
-      if (s.room !== form.room || s.day !== form.day) return false;
+      if (s.room !== form.room || normalizeDayKey(s.day) !== normalizeDayKey(form.day)) return false;
       const sStart = toMin(s.start);
       const sEnd = toMin(s.end);
       return startMin < sEnd && endMin > sStart;
@@ -100,18 +118,6 @@ export default function ScheduleCRUDModal({
       return;
     }
     onSave(form, initialData);
-  }
-
-  function handleRoomInput(val: string) {
-    setForm(f => ({ ...f, room: val }));
-    if (val.length > 0) {
-      setRoomSuggestions(
-        ROOM_SUGGESTIONS.filter(r => r.toLowerCase().includes(val.toLowerCase()))
-      );
-      setShowRoomDropdown(true);
-    } else {
-      setShowRoomDropdown(false);
-    }
   }
 
   // Time slot quick-pick
@@ -174,33 +180,42 @@ export default function ScheduleCRUDModal({
               </select>
             </div>
 
-            <div className="flex flex-col gap-1.5 relative">
+            <div className="flex flex-col gap-1.5">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ruangan *</label>
-              <input
-                type="text"
+              <select
                 value={form.room}
-                onChange={e => handleRoomInput(e.target.value)}
-                onBlur={() => setTimeout(() => setShowRoomDropdown(false), 150)}
-                placeholder="Contoh: RT04_5B"
-                className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                onChange={e => setForm(f => ({ ...f, room: e.target.value }))}
+                className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] bg-white"
                 required
-                autoComplete="off"
-              />
-              {showRoomDropdown && roomSuggestions.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl border border-slate-200 shadow-lg z-10 max-h-40 overflow-y-auto">
-                  {roomSuggestions.map(r => (
-                    <button
-                      key={r}
-                      type="button"
-                      className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-[var(--color-primary)] font-medium transition-colors"
-                      onMouseDown={(e) => { e.preventDefault(); setForm(f => ({ ...f, room: r })); setShowRoomDropdown(false); }}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              )}
+                disabled={isLoadingRooms}
+              >
+                {isLoadingRooms ? (
+                  <option value="">Memuat...</option>
+                ) : rooms.length === 0 ? (
+                  <option value="">Tidak ada ruangan</option>
+                ) : (
+                  rooms.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.name || r.id}
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
+          </div>
+
+          {/* Kelas */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Kelas *</label>
+            <input
+              type="text"
+              value={form.className}
+              onChange={e => setForm(f => ({ ...f, className: e.target.value }))}
+              placeholder="Contoh: TI-2A"
+              className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              required
+              autoComplete="off"
+            />
           </div>
 
           {/* Jam */}
@@ -210,7 +225,7 @@ export default function ScheduleCRUDModal({
               <select
                 value={form.start}
                 onChange={e => setForm(f => ({ ...f, start: e.target.value }))}
-                className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] bg-white"
                 required
               >
                 {startOptions.map(t => <option key={t} value={t}>{t}</option>)}
@@ -221,7 +236,7 @@ export default function ScheduleCRUDModal({
               <select
                 value={form.end}
                 onChange={e => setForm(f => ({ ...f, end: e.target.value }))}
-                className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] bg-white"
                 required
               >
                 {endOptions.map(t => <option key={t} value={t}>{t}</option>)}
@@ -229,11 +244,11 @@ export default function ScheduleCRUDModal({
             </div>
           </div>
 
-
           {/* Preview */}
           {form.room && (
             <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-800">
-              <span className="font-bold">{form.room}</span>
+              <span className="font-bold">{rooms.find(r => r.id === form.room)?.name ?? form.room}</span>
+              {form.className && <span className="font-bold"> · {form.className}</span>}
               <br />
               <span>{DAYS.find(d => d.key === form.day)?.label}</span>
               {" · "}
