@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import {
   DAYS, FLOORS, TIME_SLOTS, toMin, getRoomsForFloor, getScheduleForSlot,
+  sessionToTime,
 } from "@/lib/schedule-utils";
 import { ScheduleEntry } from "@/lib/schedule";
 import { BookingRecord } from "@/components/booking/BookingForm";
@@ -108,13 +109,29 @@ export default function SchedulePage() {
       setSchedules([]);
       return;
     }
-    const cosmosEntries: ScheduleEntry[] = cosmosScheduleData.schedules.map(c => ({
-      id: String(c.id ?? ""),
-      room: String(c.roomId ?? c.room ?? ""),
-      day: String(c.day ?? ""),
-      start: String(c.startTime ?? c.sessionStart ?? c.start ?? ""),
-      end: String(c.endTime ?? c.sessionEnd ?? c.end ?? ""),
-    }));
+    const cosmosEntries: ScheduleEntry[] = cosmosScheduleData.schedules.map(c => {
+      const startNum = Number(c.sessionStart);
+      const endNum   = Number(c.sessionEnd);
+
+      // sessionStart selalu nomor sesi → konversi ke waktu mulai
+      const convertedStart = (!isNaN(startNum) && startNum > 0)
+        ? sessionToTime(startNum)
+        : null;
+
+      // sessionEnd: jika berupa nomor sesi → konversi ke waktu selesai sesi tersebut
+      //             jika berupa string waktu ("11:20") → gunakan langsung
+      const convertedEnd = (!isNaN(endNum) && endNum > 0)
+        ? sessionToTime(endNum)
+        : null;
+
+      return {
+        id:    String(c.id ?? ""),
+        room:  String(c.roomId ?? c.room ?? ""),
+        day:   String(c.day ?? ""),
+        start: convertedStart?.startTime ?? String(c.startTime ?? c.start ?? ""),
+        end:   convertedEnd?.endTime     ?? String(c.sessionEnd ?? c.endTime ?? c.end ?? ""),
+      };
+    });
     setAllSchedules(cosmosEntries);
     setSchedules(cosmosEntries);
   }, [cosmosScheduleData]);
@@ -165,13 +182,19 @@ export default function SchedulePage() {
       const res2 = await fetch("/api/schedules");
       const json2 = await res2.json();
       if (json2.success && Array.isArray(json2.schedules)) {
-        const entries: ScheduleEntry[] = json2.schedules.map((c: Record<string, unknown>) => ({
-          id: String(c.id ?? ""),
-          room: String(c.roomId ?? c.room ?? ""),
-          day: String(c.day ?? ""),
-          start: String(c.startTime ?? c.sessionStart ?? c.start ?? ""),
-          end: String(c.endTime ?? c.sessionEnd ?? c.end ?? ""),
-        }));
+        const entries: ScheduleEntry[] = json2.schedules.map((c: Record<string, unknown>) => {
+          const startNum = Number(c.sessionStart);
+          const endNum   = Number(c.sessionEnd);
+          const convertedStart = (!isNaN(startNum) && startNum > 0) ? sessionToTime(startNum) : null;
+          const convertedEnd   = (!isNaN(endNum)   && endNum   > 0) ? sessionToTime(endNum)   : null;
+          return {
+            id:    String(c.id ?? ""),
+            room:  String(c.roomId ?? c.room ?? ""),
+            day:   String(c.day ?? ""),
+            start: convertedStart?.startTime ?? String(c.startTime ?? c.start ?? ""),
+            end:   convertedEnd?.endTime     ?? String(c.sessionEnd ?? c.endTime ?? c.end ?? ""),
+          };
+        });
         setAllSchedules(entries);
         setSchedules(entries);
       }
@@ -349,13 +372,19 @@ export default function SchedulePage() {
                 const res = await fetch("/api/schedules");
                 const json = await res.json();
                 if (json.success && Array.isArray(json.schedules)) {
-                  const entries: ScheduleEntry[] = json.schedules.map((c: Record<string, unknown>) => ({
-                    id: String(c.id ?? ""),
-                    room: String(c.roomId ?? c.room ?? ""),
-                    day: String(c.day ?? ""),
-                    start: String(c.startTime ?? c.sessionStart ?? c.start ?? ""),
-                    end: String(c.endTime ?? c.sessionEnd ?? c.end ?? ""),
-                  }));
+                  const entries: ScheduleEntry[] = json.schedules.map((c: Record<string, unknown>) => {
+                    const startNum = Number(c.sessionStart);
+                    const endNum   = Number(c.sessionEnd);
+                    const convertedStart = (!isNaN(startNum) && startNum > 0) ? sessionToTime(startNum) : null;
+                    const convertedEnd   = (!isNaN(endNum)   && endNum   > 0) ? sessionToTime(endNum)   : null;
+                    return {
+                      id:    String(c.id ?? ""),
+                      room:  String(c.roomId ?? c.room ?? ""),
+                      day:   String(c.day ?? ""),
+                      start: convertedStart?.startTime ?? String(c.startTime ?? c.start ?? ""),
+                      end:   convertedEnd?.endTime     ?? String(c.sessionEnd ?? c.endTime ?? c.end ?? ""),
+                    };
+                  });
                   setAllSchedules(entries);
                   setSchedules(entries);
                 }

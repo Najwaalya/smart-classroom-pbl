@@ -32,6 +32,8 @@ import {
   getRoomsForFloor,
   getScheduleForSlot,
   getCurrentDay,
+  sessionToTime,
+  normalizeDayKey,
 } from "@/lib/schedule-utils";
 
 import {
@@ -205,9 +207,40 @@ export default function BookingPage() {
     }
   );
 
+  // Konversi data CosmosDB: sessionStart/sessionEnd bisa berupa nomor sesi.
+  // PENTING: normalisasi field 'day' dan pastikan endTime dihitung dari sessionEnd yang benar.
   const schedules = useMemo(() => {
     if (!schedulesData || !schedulesData.success) return [];
-    return Array.isArray(schedulesData.schedules) ? schedulesData.schedules : [];
+    const raw = Array.isArray(schedulesData.schedules) ? schedulesData.schedules : [];
+    return raw.map((c: any) => {
+      const startNum = Number(c.sessionStart);
+      const endNum   = Number(c.sessionEnd);
+
+      // sessionStart → waktu mulai sesi
+      const convertedStart = (!isNaN(startNum) && startNum > 0)
+        ? sessionToTime(startNum)
+        : null;
+
+      // sessionEnd → waktu selesai sesi (jika number); jika string waktu pakai langsung
+      const convertedEnd = (!isNaN(endNum) && endNum > 0)
+        ? sessionToTime(endNum)
+        : null;
+
+      return {
+        ...c,
+        // Normalisasi day: "Senin" → "Monday", "Sel" → "Tuesday", dll.
+        day:    normalizeDayKey(String(c.day ?? "")),
+        roomId: c.roomId ?? c.room ?? "",
+        room:   c.roomId ?? c.room ?? "",
+        start:     convertedStart?.startTime ?? String(c.startTime ?? c.start ?? ""),
+        end:       convertedEnd?.endTime     ?? String(c.sessionEnd ?? c.endTime ?? c.end ?? ""),
+        startTime: convertedStart?.startTime ?? String(c.startTime ?? c.start ?? ""),
+        endTime:   convertedEnd?.endTime     ?? String(c.sessionEnd ?? c.endTime ?? c.end ?? ""),
+        // Pertahankan nilai asli untuk pengecekan nomor sesi
+        sessionStart: c.sessionStart,
+        sessionEnd:   c.sessionEnd,
+      };
+    });
   }, [schedulesData]);
 
   // =========================================
@@ -239,12 +272,33 @@ export default function BookingPage() {
   // ROOMS BY FLOOR
   // =========================================
 
+  // Helper: normalisasi nama ruangan untuk fuzzy matching
+  // Menghapus separator agar "RT5-5T" == "RT55T" == "rt5_5t"
+  function normalizeRoomId(id: string): string {
+    return id.toLowerCase().replace(/[-_\s]/g, "");
+  }
+
   const roomsOnFloor = useMemo(() => {
+    // ── Prioritas 1: Ambil ruangan dari data jadwal (roomId pasti konsisten) ──
+    if (schedules.length > 0) {
+      const fromSchedules = getRoomsForFloor(selectedFloor, schedules);
+      if (fromSchedules.length > 0) {
+        // Enrichment: cari label cantik dari roomOptions jika ada
+        return fromSchedules.map(id => {
+          const match = roomOptions.find(
+            r => normalizeRoomId(r.id) === normalizeRoomId(id) ||
+                 normalizeRoomId(r.name ?? "") === normalizeRoomId(id)
+          );
+          return { id, label: match?.name ?? id };
+        });
+      }
+    }
+
+    // ── Prioritas 2: Dari /api/rooms filtered by floor ──
     if (roomOptions.length > 0) {
       const sameFloorRooms = roomOptions
         .filter((room) => String(room.floor) === selectedFloor)
         .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
-
       if (sameFloorRooms.length > 0) {
         return sameFloorRooms.map((room) => ({
           id: room.id,
@@ -253,6 +307,7 @@ export default function BookingPage() {
       }
     }
 
+    // ── Prioritas 3: Dari RoomDataContext ──
     const suffixes = FLOOR_SUFFIX[selectedFloor] || [];
     if (rooms && rooms.length > 0 && suffixes.length > 0) {
       return rooms
@@ -261,8 +316,7 @@ export default function BookingPage() {
         .sort((a, b) => a.label.localeCompare(b.label));
     }
 
-    const roomsFromSchedules = getRoomsForFloor(selectedFloor, schedules);
-    return roomsFromSchedules.map((id) => ({ id, label: id }));
+    return [];
   }, [selectedFloor, rooms, schedules, roomOptions]);
 
   // =========================================
@@ -274,25 +328,14 @@ export default function BookingPage() {
     day: string,
     slot: typeof TIME_SLOTS[number]
   ): BookingRecord | null {
-
+    const normalizedDay = normalizeDayKey(day);
     return (
       bookings.find(
         (b) =>
-          b.roomId ===
-            roomId &&
-          b.day === day &&
-          toMin(
-            b.startTime
-          ) <
-            toMin(
-              slot.end
-            ) &&
-          toMin(
-            b.endTime
-          ) >
-            toMin(
-              slot.start
-            )
+          b.roomId === roomId &&
+          normalizeDayKey(b.day) === normalizedDay &&
+          toMin(b.startTime) < toMin(slot.end) &&
+          toMin(b.endTime)   > toMin(slot.start)
       ) ?? null
     );
   }
@@ -306,34 +349,40 @@ export default function BookingPage() {
     day: string,
     slot: typeof TIME_SLOTS[number]
   ): boolean {
+    const normalizedDay = normalizeDayKey(day);
+    const normRoom = normalizeRoomId(roomId);
 
-    // Jadwal kelas
+    // ── Lapisan 1: Session number match (paling andal untuk CosmosDB) ──
+    // Cocokkan hari + slot number, dengan fuzzy room matching
+    const blockedBySession = schedules.some(s => {
+      const sRoom = s.roomId || s.room || "";
+      const sDay  = normalizeDayKey(s.day || "");
 
-    if (
-      getScheduleForSlot(
-        roomId,
-        day,
-        slot,
-        schedules
-      )
-    ) {
-      return true;
-    }
+      // Fuzzy room match: "RT5-5T" vs "room-001" → normalisasi dulu
+      const roomMatch =
+        sRoom === roomId ||
+        normalizeRoomId(sRoom) === normRoom;
 
-    // Booking existing
+      if (!roomMatch || sDay !== normalizedDay) return false;
 
-    const existingBooking =
-      getBookingForSlot(
-        roomId,
-        day,
-        slot
-      );
+      const sStart = Number(s.sessionStart);
+      if (isNaN(sStart) || sStart <= 0) return false;
 
-    if (
-      existingBooking
-    ) {
-      return true;
-    }
+      const sEndNum = Number(s.sessionEnd);
+      if (!isNaN(sEndNum) && sEndNum > 0) {
+        // sessionEnd juga nomor: range check
+        return slot.slot >= sStart && slot.slot <= sEndNum;
+      }
+      // sessionEnd adalah string waktu: cek hanya sessionStart
+      return slot.slot === sStart;
+    });
+    if (blockedBySession) return true;
+
+    // ── Lapisan 2: Time-range check ──
+    if (getScheduleForSlot(roomId, normalizedDay, slot, schedules)) return true;
+
+    // ── Lapisan 3: Booking existing ──
+    if (getBookingForSlot(roomId, normalizedDay, slot)) return true;
 
     return false;
   }
@@ -819,6 +868,9 @@ export default function BookingPage() {
           }
           selectedDay={
             selectedDay
+          }
+          onDayChange={
+            setSelectedDay
           }
           roomsForFloor={
             roomsOnFloor
