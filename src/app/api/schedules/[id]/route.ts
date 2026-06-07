@@ -68,7 +68,7 @@ export async function PATCH(
       );
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, id });
   } catch (error) {
     console.error("[PATCH /api/schedules/[id]] Error:", error);
     return NextResponse.json(

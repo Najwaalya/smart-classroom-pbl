@@ -20,6 +20,7 @@ interface ScheduleCRUDModalProps {
   allSchedules: ScheduleEntry[];
   onSave: (data: ScheduleFormData, originalEntry?: ScheduleEntry) => void;
   onClose: () => void;
+  onDeleted?: () => void;
 }
 
 // Room suggestions
@@ -54,6 +55,7 @@ export default function ScheduleCRUDModal({
   const [error, setError] = useState<string | null>(null);
   const [roomSuggestions, setRoomSuggestions] = useState<string[]>([]);
   const [showRoomDropdown, setShowRoomDropdown] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const selectedDayLabel = DAYS.find(d => d.key === form.day)?.label ?? form.day;
 
@@ -191,7 +193,7 @@ export default function ScheduleCRUDModal({
                       key={r}
                       type="button"
                       className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-[var(--color-primary)] font-medium transition-colors"
-                      onClick={() => { setForm(f => ({ ...f, room: r })); setShowRoomDropdown(false); }}
+                      onMouseDown={(e) => { e.preventDefault(); setForm(f => ({ ...f, room: r })); setShowRoomDropdown(false); }}
                     >
                       {r}
                     </button>
@@ -244,10 +246,47 @@ export default function ScheduleCRUDModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-sm font-black text-slate-600 hover:bg-slate-50 transition-colors"
+              className="px-4 py-3 rounded-xl border border-slate-200 text-sm font-black text-slate-600 hover:bg-slate-50 transition-colors"
             >
               Batal
             </button>
+
+            {mode === "edit" && initialData && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!initialData || !(initialData as any).id) {
+                    setError("Tidak ada ID jadwal untuk dihapus.");
+                    return;
+                  }
+                  const id = (initialData as any).id as string;
+                  if (!confirm(`Yakin ingin menghapus jadwal di ${initialData.room} (${initialData.start}–${initialData.end})?`)) return;
+                  try {
+                    setIsDeleting(true);
+                    const res = await fetch(`/api/schedules/${encodeURIComponent(id)}`, { method: "DELETE" });
+                    const json = await res.json();
+                    if (!res.ok) {
+                      setError(json?.error ?? "Gagal menghapus jadwal");
+                      setIsDeleting(false);
+                      return;
+                    }
+                    // Close modal and notify parent to refresh
+                    onClose();
+                    if (typeof onDeleted === "function") onDeleted();
+                  } catch (err) {
+                    console.error("Hapus jadwal error:", err);
+                    setError("Gagal menghapus jadwal");
+                  } finally {
+                    setIsDeleting(false);
+                  }
+                }}
+                className="px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-black transition-colors"
+                disabled={isDeleting}
+              >
+                {isDeleting ? "Menghapus..." : "Hapus Jadwal"}
+              </button>
+            )}
+
             <button
               type="submit"
               className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-[var(--color-primary)] to-blue-500 text-white text-sm font-black hover:from-[var(--color-primary-dark)] hover:to-blue-600 transition-all shadow-lg shadow-blue-900/20"

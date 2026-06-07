@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Plus, CheckCircle2, AlertTriangle, CalendarCheck, Clock,
 } from "lucide-react";
-import { TIME_SLOTS, DAYS, PURPOSES, toMin, getDayLabel } from "@/lib/schedule-utils";
+import { TIME_SLOTS, DAYS, toMin, getDayLabel } from "@/lib/schedule-utils";
 import { getUserInfo } from "@/lib/auth";
 
 export interface BookingRecord {
@@ -19,10 +19,15 @@ export interface BookingRecord {
   bookedAt: Date;
 }
 
+export interface BookingOption {
+  id: string;
+  label: string;
+}
+
 export interface BookingFormProps {
   selectedFloor: string;
   selectedDay: string;
-  roomsForFloor: string[];
+  roomsForFloor: BookingOption[];
   onBooked: (record: BookingRecord) => void;
   checkSlotBlocked: (roomId: string, day: string, slot: typeof TIME_SLOTS[0]) => boolean;
 }
@@ -37,17 +42,16 @@ export function BookingForm({
   const userInfo = getUserInfo();
   const dayLabel = getDayLabel(selectedDay);
 
-  const [roomId, setRoomId] = useState(roomsForFloor[0] ?? "");
+  const [roomId, setRoomId] = useState(roomsForFloor[0]?.id ?? "");
   const [selectedSlots, setSelectedSlots] = useState<number[]>([]);
-  const [purpose, setPurpose] = useState(PURPOSES[0]);
-  const [custom, setCustom] = useState("");
-  const [useCustom, setUseCustom] = useState(false);
+  const [purpose, setPurpose] = useState("");
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
-  useMemo(() => {
-    setRoomId(roomsForFloor[0] ?? "");
-    setSelectedSlots([]);
+  useEffect(() => {
+    if (roomsForFloor.length > 0) {
+      setRoomId(roomsForFloor[0]);
+    }
   }, [roomsForFloor]);
 
   const { startTime, endTime } = useMemo(() => {
@@ -103,13 +107,18 @@ export function BookingForm({
       return;
     }
 
+    if (!purpose.trim()) {
+      setError("Keperluan tidak boleh kosong.");
+      return;
+    }
+
     const record: BookingRecord = {
       id: Math.random().toString(36).slice(2, 9),
       roomId,
       day: selectedDay,
       startTime,
       endTime,
-      purpose: useCustom ? custom.trim() : purpose,
+      purpose: purpose.trim(),
       bookedBy: userInfo.name,
       bookedById: userInfo.id,
       bookedAt: new Date(),
@@ -117,6 +126,7 @@ export function BookingForm({
     onBooked(record);
 
     setSelectedSlots([]);
+    setPurpose("");
     setSuccess(true);
     setTimeout(() => setSuccess(false), 3000);
   }
@@ -158,7 +168,11 @@ export function BookingForm({
             onChange={e => setRoomId(e.target.value)}
             className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-black text-slate-800 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] transition-all"
           >
-            {roomsForFloor.map(r => <option key={r} value={r}>{r}</option>)}
+            {roomsForFloor.map((room) => (
+              <option key={room.id} value={room.id}>
+                {room.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -227,43 +241,19 @@ export function BookingForm({
       {/* Keperluan */}
       <div>
         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Keperluan</label>
-        {!useCustom ? (
-          <div className="flex flex-wrap gap-2">
-            {PURPOSES.map(p => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setPurpose(p)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black border transition-all ${
-                  purpose === p ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <input
-            type="text"
-            value={custom}
-            onChange={e => setCustom(e.target.value)}
-            placeholder="Tulis keperluan..."
-            required
-            className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 transition-all"
-          />
-        )}
-        <button
-          type="button"
-          onClick={() => setUseCustom(p => !p)}
-          className="text-[10px] font-black text-[var(--color-primary)] hover:underline mt-1.5 block"
-        >
-          {useCustom ? "← Pilih dari daftar" : "Tulis sendiri →"}
-        </button>
+        <textarea
+          value={purpose}
+          onChange={e => setPurpose(e.target.value)}
+          placeholder="Jelaskan keperluan ruangan Anda (misal: 'Rapat kelompok proyek', 'Kuliah pengganti', 'Diskusi tim', dll)"
+          rows={3}
+          className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] transition-all resize-none"
+        />
+        <p className="text-[10px] text-slate-400 mt-1.5">Minimal 5 karakter diperlukan.</p>
       </div>
 
       <button
         type="submit"
-        disabled={!!conflict || selectedSlots.length === 0}
+        disabled={!!conflict || selectedSlots.length === 0 || purpose.trim().length < 5}
         className="w-full py-3.5 bg-[var(--color-primary)] text-white text-sm font-black rounded-xl hover:bg-[var(--color-primary-dark)] transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         <CalendarCheck size={16} /> Booking Sekarang

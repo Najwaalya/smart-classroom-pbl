@@ -146,6 +146,7 @@ export default function LogsPage() {
   const [searchQuery,  setSearchQuery]  = useState("");
   const [roomFilter,   setRoomFilter]   = useState("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
 
 useEffect(() => {
   setMounted(true);           // ← setState
@@ -180,10 +181,23 @@ useEffect(() => {
   // ── Derive connection status & log list ───────────────────────────────────
   const dbOnline = !fetchError && apiResponse?.success === true;
 
-  const logs: LogEntry[] = useMemo(() => {
+  // Treat logs as empty if there are no fresh sensor events (avoid showing seed/dummy logs)
+  const LOG_FRESH_MS = 1000 * 60 * 15; // 15 minutes
+  const rawLogs: LogEntry[] = useMemo(() => {
     if (!dbOnline || !Array.isArray(apiResponse?.data)) return [];
     return (apiResponse.data as StatusLogDoc[]).map(docToLogEntry);
   }, [apiResponse, dbOnline]);
+
+  const displayLogs: LogEntry[] = useMemo(() => {
+    if (rawLogs.length === 0) return [];
+    const anyFresh = rawLogs.some((l) => Date.now() - l.timestamp < LOG_FRESH_MS);
+    return anyFresh ? rawLogs : [];
+  }, [rawLogs]);
+
+  // Keep `logs` state in sync so other parts of the component can read/update it
+  useEffect(() => {
+    setLogs(displayLogs);
+  }, [displayLogs]);
 
   // ── Room options untuk dropdown filter ────────────────────────────────────
   const uniqueRooms = useMemo(() => {
@@ -208,6 +222,7 @@ useEffect(() => {
   );
 
   // ── Stats ─────────────────────────────────────────────────────────────────
+  // If displayLogs is empty (no fresh data), counters default to 0
   const stats = useMemo(() => ({
     entry:       logs.filter((l) => l.type === "entry").length,
     exit:        logs.filter((l) => l.type === "exit").length,
