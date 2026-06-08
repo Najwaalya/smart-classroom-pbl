@@ -163,11 +163,6 @@ export function Topbar({
                   href: "/analytics",
                   label: "Analitik",
                 },
-
-                {
-                  href: "/logs",
-                  label: "Catatan Log",
-                },
               ].map((item) => (
                 <Link
                   key={item.href}

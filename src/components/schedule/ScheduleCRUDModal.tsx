@@ -47,7 +47,7 @@ export default function ScheduleCRUDModal({
   });
 
   const [error, setError] = useState<string | null>(null);
-  const [rooms, setRooms] = useState<{ id: string; name: string }[]>([]);
+  const [rooms, setRooms] = useState<{ id: string; roomId?: string; name: string }[]>([]);
   const [isLoadingRooms, setIsLoadingRooms] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -64,7 +64,8 @@ export default function ScheduleCRUDModal({
           setRooms(json.rooms);
           // Set default room if none selected and in "add" mode
           if (mode === "add" && !form.room && json.rooms.length > 0) {
-            setForm(f => ({ ...f, room: json.rooms[0].id }));
+            const defaultRoom = json.rooms[0];
+            setForm(f => ({ ...f, room: defaultRoom.roomId ?? defaultRoom.id }));
           }
         }
       } catch (err) {
@@ -194,11 +195,14 @@ export default function ScheduleCRUDModal({
                 ) : rooms.length === 0 ? (
                   <option value="">Tidak ada ruangan</option>
                 ) : (
-                  rooms.map(r => (
-                    <option key={r.id} value={r.id}>
-                      {r.name || r.id}
-                    </option>
-                  ))
+                  rooms.map(r => {
+                    const val = r.roomId ?? r.id;
+                    return (
+                      <option key={val} value={val}>
+                        {val}
+                      </option>
+                    );
+                  })
                 )}
               </select>
             </div>
@@ -247,7 +251,7 @@ export default function ScheduleCRUDModal({
           {/* Preview */}
           {form.room && (
             <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-800">
-              <span className="font-bold">{rooms.find(r => r.id === form.room)?.name ?? form.room}</span>
+              <span className="font-bold">{rooms.find(r => (r.roomId ?? r.id) === form.room)?.name ?? form.room}</span>
               {form.className && <span className="font-bold"> · {form.className}</span>}
               <br />
               <span>{DAYS.find(d => d.key === form.day)?.label}</span>

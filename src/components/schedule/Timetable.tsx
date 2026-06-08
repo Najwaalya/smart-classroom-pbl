@@ -183,7 +183,7 @@ export function Timetable({
                         <div className={`h-full mx-0.5 my-0.5 rounded-lg border ${colorClass} flex items-center justify-center relative group/cell overflow-hidden`}>
                           {/* Room name only */}
                           <span className="text-[11px] font-black text-center px-1 leading-tight">
-                            {entry.room}
+                            {entry.roomName ?? entry.roomId ?? entry.room}
                           </span>
 
                           {/* CRUD buttons on hover */}

@@ -124,9 +124,16 @@ export default function SchedulePage() {
         ? sessionToTime(endNum)
         : null;
 
+      const rawRoom = String(c.roomId ?? c.room ?? "");
+      const matchedRoom = rooms.find(r => r.id === rawRoom || r.roomId === rawRoom || r.roomName === rawRoom);
+      const roomName = matchedRoom ? (matchedRoom.roomName ?? matchedRoom.roomId ?? matchedRoom.id) : undefined;
+      const roomIdVal = matchedRoom ? (matchedRoom.roomId ?? matchedRoom.id) : undefined;
+
       return {
         id:    String(c.id ?? ""),
-        room:  String(c.roomId ?? c.room ?? ""),
+        room:  rawRoom,
+        roomName: roomName,
+        roomId: roomIdVal,
         day:   normalizeDayKey(String(c.day ?? "")),
         start: convertedStart?.startTime ?? String(c.startTime ?? c.start ?? ""),
         end:   convertedEnd?.endTime     ?? String(c.sessionEnd ?? c.endTime ?? c.end ?? ""),
@@ -134,7 +141,7 @@ export default function SchedulePage() {
     });
     setAllSchedules(cosmosEntries);
     setSchedules(cosmosEntries);
-  }, [cosmosScheduleData]);
+  }, [cosmosScheduleData, rooms]);
 
   // ── Derived ──────────────────────────────────────
   const customIds = useMemo(() => new Set<string>(), []);
@@ -147,9 +154,12 @@ export default function SchedulePage() {
     const startSlot = startSlotObj ? startSlotObj.slot : 1;
     const endSlot = endSlotObj ? endSlotObj.slot : startSlot;
 
+    const matchedRoom = rooms.find(r => r.id === data.room || r.roomId === data.room || r.roomName === data.room);
+    const resolvedRoomId = matchedRoom ? (matchedRoom.roomId ?? matchedRoom.id) : data.room;
+
     const payload = {
       day: dayLabel,
-      roomId: data.room.trim(),
+      roomId: resolvedRoomId.trim(),
       className: data.className.trim(),
       startSlot,
       endSlot,

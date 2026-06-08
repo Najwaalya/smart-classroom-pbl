@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   LineChart,
-  History,
   X,
   CalendarDays,
   BookOpen,
@@ -60,11 +59,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             name: "Analitik",
             href: "/analytics",
             icon: LineChart,
-          },
-          {
-            name: "Riwayat",
-            href: "/logs",
-            icon: History,
           },
         ]
       : []),

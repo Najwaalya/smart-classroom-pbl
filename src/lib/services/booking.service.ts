@@ -35,8 +35,8 @@ export async function getAllBookings(): Promise<Booking[]> {
   try {
     const { resources: bookings } = await bookingContainer.items
       .query<Booking>(
-        "SELECT * FROM c ORDER BY c.createdAt DESC",
-        { maxItemCount: -1 }
+        "SELECT TOP 500 * FROM c ORDER BY c.createdAt DESC",
+        { maxItemCount: 100 }
       )
       .fetchAll();
 

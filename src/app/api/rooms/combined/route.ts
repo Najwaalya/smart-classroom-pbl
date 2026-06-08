@@ -74,7 +74,7 @@ export async function GET() {
   try {
     // 1. Ambil semua rooms
     const { resources: rooms } = await roomContainer.items
-      .query<CosmosRoom>("SELECT * FROM c ORDER BY c.id ASC")
+      .query<CosmosRoom>("SELECT * FROM c ORDER BY c.id ASC", { maxItemCount: 100 })
       .fetchAll();
 
     // 2. Ambil sensor terbaru (order by timestamp desc), lalu map ke rooms secara fleksibel
@@ -82,7 +82,7 @@ export async function GET() {
     try {
       const sensorResult = await sensorContainer.items
         .query<CosmosSensor>(
-          "SELECT * FROM c ORDER BY c.timestamp DESC OFFSET 0 LIMIT 200"
+          "SELECT TOP 200 * FROM c ORDER BY c.timestamp DESC"
         )
         .fetchAll();
 

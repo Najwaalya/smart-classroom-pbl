@@ -88,7 +88,9 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
   const [scheduleData, setScheduleData] = useState<ScheduleEntry[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(true);
 
-  const room = rooms.find((r) => r.id === id);
+  const room = rooms.find(
+    (r) => r.id === id || r.roomId === id || r.roomName === id
+  );
 
   useEffect(() => {
     async function loadSchedules() {
@@ -123,13 +125,22 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
     loadSchedules();
   }, []);
 
+  useEffect(() => {
+    if (room) {
+      const roomTitle = room.roomName ?? room.roomId ?? room.id;
+      document.title = `${roomTitle} — ClassTrack`;
+    }
+  }, [room]);
+
+  const filterRoomId = room ? (room.roomId ?? room.roomName ?? room.id) : id;
+
   // Hooks harus dipanggil sebelum early return
   const hourlyData = useMemo(() => (room ? buildHourlyData(room.students) : []), [room]);
-  const todaySchedules = useMemo(() => getTodaySchedules(id, scheduleData), [id, scheduleData]);
-  const allSchedules = useMemo(() => getAllSchedules(id, scheduleData), [id, scheduleData]);
-  const currentBooking = getBooking(id);
+  const todaySchedules = useMemo(() => getTodaySchedules(filterRoomId, scheduleData), [filterRoomId, scheduleData]);
+  const allSchedules = useMemo(() => getAllSchedules(filterRoomId, scheduleData), [filterRoomId, scheduleData]);
+  const currentBooking = getBooking(filterRoomId);
   const bookingEntries = currentBooking
-    ? [{ roomId: id, day: currentBooking.day ?? "", startTime: currentBooking.startTime, endTime: currentBooking.endTime }]
+    ? [{ roomId: filterRoomId, day: currentBooking.day ?? "", startTime: currentBooking.startTime, endTime: currentBooking.endTime }]
     : [];
 
   const computedLastMotionMinutes = useMemo(() => {
@@ -146,8 +157,8 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
       lastMotionMinutes: computedLastMotionMinutes,
     };
 
-    return getScheduleStatus(id, sensorData, bookingEntries);
-  }, [id, room?.irSensor?.peopleCount, room?.pirSensor?.status, computedLastMotionMinutes, bookingEntries]);
+    return getScheduleStatus(filterRoomId, sensorData, bookingEntries);
+  }, [filterRoomId, room?.irSensor?.peopleCount, room?.pirSensor?.status, computedLastMotionMinutes, bookingEntries]);
 
   const currentTime = new Date().toTimeString().slice(0, 5);
   const currentSchedule = todaySchedules.find((s) => isTimeInRange(currentTime, s.start, s.end));
@@ -202,14 +213,14 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
         <ChevronRight size={12} />
         <span className="text-slate-500">{getWingLabel(room.wing).toUpperCase()}</span>
         <ChevronRight size={12} />
-        <span className="text-[var(--color-primary)]">{room.id}</span>
+        <span className="text-[var(--color-primary)]">{room.roomName ?? room.roomId ?? room.id}</span>
       </nav>
 
       {/* ── HEADER ── */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-5xl font-black text-slate-800 tracking-tight">{room.id}</h1>
+            <h1 className="text-5xl font-black text-slate-800 tracking-tight">{room.roomName ?? room.roomId ?? room.id}</h1>
             <span className={`text-xs font-black px-3 py-1.5 rounded-full flex items-center gap-1.5 ${sc.bg}`}>
               <span className={`w-2 h-2 rounded-full animate-pulse ${sc.dot}`} />
               {sc.label}

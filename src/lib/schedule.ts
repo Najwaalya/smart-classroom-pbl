@@ -1,5 +1,7 @@
 export interface ScheduleEntry {
   room: string;
+  roomName?: string;
+  roomId?: string;
   day: string;
   start: string;
   end: string;
