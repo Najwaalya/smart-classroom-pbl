@@ -59,7 +59,28 @@ export async function PATCH(
   try {
     const body = await req.json();
 
-    const result = await updateSchedule(id, body);
+    const mappedUpdates: any = {};
+    if (body.roomId !== undefined || body.room !== undefined) {
+      mappedUpdates.roomId = body.roomId ?? body.room;
+    }
+    if (body.day !== undefined) {
+      mappedUpdates.day = body.day;
+    }
+    if (body.className !== undefined || body.class !== undefined) {
+      mappedUpdates.class = body.className ?? body.class;
+    }
+    if (body.startSlot !== undefined || body.sessionStart !== undefined) {
+      mappedUpdates.sessionStart = Number(body.startSlot ?? body.sessionStart);
+    }
+    if (body.endSlot !== undefined || body.sessionEnd !== undefined) {
+      mappedUpdates.sessionEnd = Number(body.endSlot ?? body.sessionEnd);
+    }
+    if (body.subject !== undefined) mappedUpdates.subject = body.subject;
+    if (body.lecturer !== undefined) mappedUpdates.lecturer = body.lecturer;
+    if (body.semester !== undefined) mappedUpdates.semester = body.semester;
+    if (body.academicYear !== undefined) mappedUpdates.academicYear = body.academicYear;
+
+    const result = await updateSchedule(id, mappedUpdates);
     
     if (!result.success) {
       return NextResponse.json(

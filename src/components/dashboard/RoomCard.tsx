@@ -100,7 +100,7 @@ export default function RoomCard({ room }: RoomCardProps) {
         <div className="flex justify-between items-start mb-6">
           <div>
             <h3 className="text-2xl font-black text-slate-800">
-              {room.roomId ?? room.name ?? room.id}
+              {room.name ?? room.id}
             </h3>
 
             {room.wing && (

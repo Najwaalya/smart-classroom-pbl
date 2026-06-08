@@ -54,16 +54,41 @@ export function Timetable({
   const rows = useMemo(() => {
     return DAYS.map(day => {
       const dayEntries = filtered.filter(s => s.day === day.key);
-      // For each entry find first/last slot it covers
-      const items = dayEntries.map(entry => {
-        const entryStartMin = toMin(entry.start);
-        const entryEndMin = toMin(entry.end);
 
-        // find first slot that overlaps
-        const startIdx = TIME_SLOTS.findIndex(ts =>
-          toMin(ts.start) < entryEndMin && toMin(ts.end) > entryStartMin
+      // ── Sort by start time ─────────────────────────────────────────────────
+      const sorted = [...dayEntries].sort((a, b) => toMin(a.start) - toMin(b.start));
+
+      // ── Merge adjacent entries with the same room into one block ───────────
+      // Two entries merge if: same room AND end-time of first === start-time of next
+      const merged: ScheduleEntry[] = [];
+      for (const entry of sorted) {
+        const last = merged[merged.length - 1];
+        const sameRoom =
+          last &&
+          (last.roomId || last.room) === (entry.roomId || entry.room);
+        const touching =
+          last &&
+          toMin(last.end) === toMin(entry.start);
+        if (last && sameRoom && touching) {
+          // Extend the previous block's end time; keep first entry's class label
+          merged[merged.length - 1] = { ...last, end: entry.end };
+        } else {
+          merged.push({ ...entry });
+        }
+      }
+
+      // ── Compute TIME_SLOTS span for each (possibly merged) entry ───────────
+      const items = merged.map(entry => {
+        const entryStartMin = toMin(entry.start);
+        const entryEndMin   = toMin(entry.end);
+
+        // first slot that overlaps with this entry
+        const startIdx = TIME_SLOTS.findIndex(
+          ts => toMin(ts.start) < entryEndMin && toMin(ts.end) > entryStartMin
         );
-        // find last slot
+        if (startIdx === -1) return null; // entry doesn't overlap any slot — skip
+
+        // last slot that overlaps
         let endIdx = startIdx;
         for (let i = startIdx + 1; i < TIME_SLOTS.length; i++) {
           if (toMin(TIME_SLOTS[i].start) < entryEndMin && toMin(TIME_SLOTS[i].end) > entryStartMin) {
@@ -71,7 +96,8 @@ export function Timetable({
           }
         }
         return { entry, startIdx, span: endIdx - startIdx + 1 };
-      });
+      }).filter(Boolean) as { entry: ScheduleEntry; startIdx: number; span: number }[];
+
       return { day, items };
     });
   }, [filtered]);
@@ -181,9 +207,13 @@ export function Timetable({
                         className="border border-slate-200 p-0 align-middle h-16"
                       >
                         <div className={`h-full mx-0.5 my-0.5 rounded-lg border ${colorClass} flex items-center justify-center relative group/cell overflow-hidden`}>
-                          {/* Room name only */}
+                          {/* Class name first, fallback to room */}
                           <span className="text-[11px] font-black text-center px-1 leading-tight">
-                            {entry.room}
+                            {(entry.class && entry.class !== "")
+                              ? entry.class
+                              : (entry.subject && entry.subject !== "")
+                                ? entry.subject
+                                : (entry.roomName ?? entry.roomId ?? entry.room)}
                           </span>
 
                           {/* CRUD buttons on hover */}

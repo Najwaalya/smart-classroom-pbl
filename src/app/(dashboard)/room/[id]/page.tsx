@@ -9,7 +9,6 @@ import {
   Thermometer,
   Droplets,
   Wifi,
-  Download,
   Users,
   CalendarDays,
 } from "lucide-react";
@@ -26,6 +25,7 @@ import { useBooking } from "@/contexts/BookingContext";
 import { useRoomData } from "@/contexts/RoomDataContext";
 import { getScheduleStatus, RoomSensorData } from "@/lib/schedule-status";
 import { ScheduleEntry } from "@/lib/schedule";
+import { getRole } from "@/lib/auth";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -34,6 +34,11 @@ const CAPACITY = 35;
 function getFloorLabel(id: string) {
   const m = id.match(/_(\d+)/);
   return m ? `Lantai ${m[1]}` : "Lantai ?";
+}
+
+function getFloorFromRoomId(roomId: string): string {
+  const match = roomId.match(/\d+/);
+  return match ? match[0] : "?";
 }
 
 function getWingLabel(wing: string | null) {
@@ -85,12 +90,16 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
   const { rooms } = useRoomData();
   const { getBooking } = useBooking();
 
+  const room = rooms.find(
+    (r) => r.id === id || r.roomId === id || r.roomName === id
+  );
+
   const [scheduleData, setScheduleData] = useState<ScheduleEntry[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(true);
-
-  const room = rooms.find((r) => r.id === id);
+  const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
+    setRole(getRole());
     async function loadSchedules() {
       try {
         const res = await fetch("/api/schedules");
@@ -123,13 +132,22 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
     loadSchedules();
   }, []);
 
+  useEffect(() => {
+    if (room) {
+      const roomTitle = room.roomName ?? room.roomId ?? room.id;
+      document.title = `${roomTitle} — ClassTrack`;
+    }
+  }, [room]);
+
+  const filterRoomId = room ? (room.roomId ?? room.roomName ?? room.id) : id;
+
   // Hooks harus dipanggil sebelum early return
   const hourlyData = useMemo(() => (room ? buildHourlyData(room.students) : []), [room]);
-  const todaySchedules = useMemo(() => getTodaySchedules(id, scheduleData), [id, scheduleData]);
-  const allSchedules = useMemo(() => getAllSchedules(id, scheduleData), [id, scheduleData]);
-  const currentBooking = getBooking(id);
+  const todaySchedules = useMemo(() => getTodaySchedules(filterRoomId, scheduleData), [filterRoomId, scheduleData]);
+  const allSchedules = useMemo(() => getAllSchedules(filterRoomId, scheduleData), [filterRoomId, scheduleData]);
+  const currentBooking = getBooking(filterRoomId);
   const bookingEntries = currentBooking
-    ? [{ roomId: id, day: currentBooking.day, startTime: currentBooking.startTime, endTime: currentBooking.endTime }]
+    ? [{ roomId: filterRoomId, day: currentBooking.day ?? "", startTime: currentBooking.startTime, endTime: currentBooking.endTime }]
     : [];
 
   const computedLastMotionMinutes = useMemo(() => {
@@ -146,8 +164,8 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
       lastMotionMinutes: computedLastMotionMinutes,
     };
 
-    return getScheduleStatus(id, sensorData, bookingEntries);
-  }, [id, room?.irSensor?.peopleCount, room?.pirSensor?.status, computedLastMotionMinutes, bookingEntries]);
+    return getScheduleStatus(filterRoomId, sensorData, bookingEntries);
+  }, [filterRoomId, room?.irSensor?.peopleCount, room?.pirSensor?.status, computedLastMotionMinutes, bookingEntries]);
 
   const currentTime = new Date().toTimeString().slice(0, 5);
   const currentSchedule = todaySchedules.find((s) => isTimeInRange(currentTime, s.start, s.end));
@@ -200,29 +218,25 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
           <Home size={13} /> RINGKASAN
         </Link>
         <ChevronRight size={12} />
-        <span className="text-slate-500">{getWingLabel(room.wing).toUpperCase()}</span>
+        <span className="text-slate-500">{`Lantai ${getFloorFromRoomId(room.roomId ?? room.id)}`.toUpperCase()}</span>
         <ChevronRight size={12} />
-        <span className="text-[var(--color-primary)]">{room.id}</span>
+        <span className="text-[var(--color-primary)]">{room.roomId ?? room.roomName ?? room.id}</span>
       </nav>
 
       {/* ── HEADER ── */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-5xl font-black text-slate-800 tracking-tight">{room.id}</h1>
+            <h1 className="text-5xl font-black text-slate-800 tracking-tight">{room.roomId ?? room.roomName ?? room.id}</h1>
             <span className={`text-xs font-black px-3 py-1.5 rounded-full flex items-center gap-1.5 ${sc.bg}`}>
               <span className={`w-2 h-2 rounded-full animate-pulse ${sc.dot}`} />
               {sc.label}
             </span>
           </div>
           <p className="text-sm text-slate-400 font-semibold mt-1">
-            {getFloorLabel(room.id)} · {getWingLabel(room.wing)} · Data Waktu Nyata
+            Lantai {getFloorFromRoomId(room.roomId ?? room.id)} · {room.roomId ?? room.id} · Data Waktu Nyata
           </p>
         </div>
-        <button className="flex items-center gap-2 px-5 py-2.5 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors self-start whitespace-nowrap shadow-sm">
-          <Download size={14} />
-          Unduh Laporan LENGKAP
-        </button>
       </div>
 
       {/* ── TOP ROW: Occupancy + DHT + PIR ── */}
@@ -321,139 +335,145 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
           </div>
 
           {/* PIR Sensor */}
-          <div className="glass-panel p-4 bg-gradient-to-r from-emerald-50 to-white border-emerald-100">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2 text-[10px] font-black text-emerald-700 uppercase tracking-widest">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                Jaringan Sensor PIR Cahaya
-              </div>
-              <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full">
-                {room.pirSensor.status === "offline" ? "Sensor PIR offline" : `${room.pirSensor.motionCount} sinyal`}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center shadow-md">
-                  <Wifi size={18} className="text-white" />
+          {role === "admin" && (
+            <div className="glass-panel p-4 bg-gradient-to-r from-emerald-50 to-white border-emerald-100">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2 text-[10px] font-black text-emerald-700 uppercase tracking-widest">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Jaringan Sensor PIR Cahaya
                 </div>
-                <div>
-                  <p className="text-sm font-black text-slate-800">Status Pergerakan</p>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{pirLabel}</p>
+                <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full">
+                  {room.pirSensor.status === "offline" ? "Sensor PIR offline" : `${room.pirSensor.motionCount} sinyal`}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center shadow-md">
+                    <Wifi size={18} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-slate-800">Status Pergerakan</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{pirLabel}</p>
+                  </div>
+                </div>
+                {/* PIR bar visualizer */}
+                <div className="flex items-end gap-1 h-8">
+                  {room.pirSensor.status !== "offline" && room.pir.length > 0
+                    ? room.pir.map((v, i) => (
+                        <div
+                          key={i}
+                          className="w-2.5 rounded-sm bg-emerald-500 transition-all duration-700"
+                          style={{ height: `${Math.max(20, v)}%`, opacity: 0.6 + i * 0.1 }}
+                        />
+                      ))
+                    : Array.from({ length: 4 }).map((_, i) => (
+                        <div key={i} className="w-2.5 rounded-sm bg-slate-200" style={{ height: "20%" }} />
+                      ))}
                 </div>
               </div>
-              {/* PIR bar visualizer */}
-              <div className="flex items-end gap-1 h-8">
-                {room.pirSensor.status !== "offline" && room.pir.length > 0
-                  ? room.pir.map((v, i) => (
-                      <div
-                        key={i}
-                        className="w-2.5 rounded-sm bg-emerald-500 transition-all duration-700"
-                        style={{ height: `${Math.max(20, v)}%`, opacity: 0.6 + i * 0.1 }}
-                      />
-                    ))
-                  : Array.from({ length: 4 }).map((_, i) => (
-                      <div key={i} className="w-2.5 rounded-sm bg-slate-200" style={{ height: "20%" }} />
-                    ))}
-              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
       {/* ── SENSOR HEALTH SUMMARY ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
-        <div className="glass-panel p-5">
-          <div className="flex items-center justify-between gap-4 mb-3">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Health Sensor</p>
-              <p className="text-sm font-black text-slate-800 mt-2">Status koneksi seluruh sensor</p>
+      {role === "admin" && (
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
+          <div className="glass-panel p-5">
+            <div className="flex items-center justify-between gap-4 mb-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Health Sensor</p>
+                <p className="text-sm font-black text-slate-800 mt-2">Status koneksi seluruh sensor</p>
+              </div>
+              <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${
+                room.sensorHealth.overall === "ok"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : room.sensorHealth.overall === "warning"
+                  ? "bg-amber-100 text-amber-700"
+                  : "bg-slate-100 text-slate-500"
+              }`}>
+                {room.sensorHealth.overall.toUpperCase()}
+              </span>
             </div>
-            <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${
-              room.sensorHealth.overall === "ok"
-                ? "bg-emerald-100 text-emerald-700"
-                : room.sensorHealth.overall === "warning"
-                ? "bg-amber-100 text-amber-700"
-                : "bg-slate-100 text-slate-500"
-            }`}>
-              {room.sensorHealth.overall.toUpperCase()}
-            </span>
+            <p className="text-[10px] text-slate-500">{room.sensorHealth.message}</p>
+            <p className="text-[10px] text-slate-400 mt-4">
+              Terakhir: {room.lastUpdated ? new Date(room.lastUpdated).toLocaleString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "Tidak ada data"}
+            </p>
           </div>
-          <p className="text-[10px] text-slate-500">{room.sensorHealth.message}</p>
-          <p className="text-[10px] text-slate-400 mt-4">
-            Terakhir: {room.lastUpdated ? new Date(room.lastUpdated).toLocaleString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "Tidak ada data"}
-          </p>
-        </div>
 
-        <div className="glass-panel p-5">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">DHT11</p>
-          <p className="text-2xl font-black text-slate-800">{room.dhtSensor.temperature.toFixed(1)}°C</p>
-          <p className="text-2xl font-black text-slate-800 mt-1">{room.dhtSensor.humidity.toFixed(1)}%</p>
-          <p className="text-[10px] font-bold uppercase tracking-widest mt-4 text-slate-500">
-            {room.dhtSensor.health === "ok" ? "Normal" : room.dhtSensor.health === "warning" ? "Peringatan" : "Offline"}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-2">
-            {room.dhtSensor.status === "offline"
-              ? "Tidak ada data DHT"
-              : room.dhtSensor.status === "high"
-              ? "Suhu / kelembapan tinggi"
-              : room.dhtSensor.status === "low"
-              ? "Kelembapan rendah"
-              : "Kondisi normal"}
-          </p>
-        </div>
+          <div className="glass-panel p-5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">DHT11</p>
+            <p className="text-2xl font-black text-slate-800">{room.dhtSensor.temperature.toFixed(1)}°C</p>
+            <p className="text-2xl font-black text-slate-800 mt-1">{room.dhtSensor.humidity.toFixed(1)}%</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest mt-4 text-slate-500">
+              {room.dhtSensor.health === "ok" ? "Normal" : room.dhtSensor.health === "warning" ? "Peringatan" : "Offline"}
+            </p>
+            <p className="text-[10px] text-slate-400 mt-2">
+              {room.dhtSensor.status === "offline"
+                ? "Tidak ada data DHT"
+                : room.dhtSensor.status === "high"
+                ? "Suhu / kelembapan tinggi"
+                : room.dhtSensor.status === "low"
+                ? "Kelembapan rendah"
+                : "Kondisi normal"}
+            </p>
+          </div>
 
-        <div className="glass-panel p-5">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Sensor IR</p>
-          <p className="text-4xl font-black text-slate-800">{room.irSensor.peopleCount}</p>
-          <p className="text-[10px] font-bold uppercase tracking-widest mt-1 text-slate-500">
-            {room.irSensor.status === "offline" ? "Offline" : room.irSensor.status === "present" ? "Terisi" : "Kosong"}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-2">
-            {room.irSensor.lastUpdated ? `Terakhir: ${new Date(room.irSensor.lastUpdated).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}` : "Tidak ada data IR"}
-          </p>
-        </div>
+          <div className="glass-panel p-5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Sensor IR</p>
+            <p className="text-4xl font-black text-slate-800">{room.irSensor.peopleCount}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest mt-1 text-slate-500">
+              {room.irSensor.status === "offline" ? "Offline" : room.irSensor.status === "present" ? "Terisi" : "Kosong"}
+            </p>
+            <p className="text-[10px] text-slate-400 mt-2">
+              {room.irSensor.lastUpdated ? `Terakhir: ${new Date(room.irSensor.lastUpdated).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}` : "Tidak ada data IR"}
+            </p>
+          </div>
 
-        <div className="glass-panel p-5">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Sensor PIR</p>
-          <p className="text-2xl font-black text-slate-800">{room.pirSensor.motionCount}</p>
-          <p className="text-[10px] font-bold uppercase tracking-widest mt-1 text-slate-500">
-            {room.pirSensor.status === "offline" ? "Offline" : room.pirSensor.status === "active" ? "Aktif" : "Inaktif"}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-2">
-            Durasi: {room.pirSensor.motionDuration} ms
-          </p>
+          <div className="glass-panel p-5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Sensor PIR</p>
+            <p className="text-2xl font-black text-slate-800">{room.pirSensor.motionCount}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest mt-1 text-slate-500">
+              {room.pirSensor.status === "offline" ? "Offline" : room.pirSensor.status === "active" ? "Aktif" : "Inaktif"}
+            </p>
+            <p className="text-[10px] text-slate-400 mt-2">
+              Durasi: {room.pirSensor.motionDuration} ms
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── KORELASI SENSOR DENGAN JADWAL ── */}
-      <div className="glass-panel p-5 flex flex-col gap-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Korelasi Sensor vs Jadwal</p>
-            <h3 className={`text-base font-black ${scheduleStatus.color} mt-2`}>{scheduleStatus.label}</h3>
+      {role === "admin" && (
+        <div className="glass-panel p-5 flex flex-col gap-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Korelasi Sensor vs Jadwal</p>
+              <h3 className={`text-base font-black ${scheduleStatus.color} mt-2`}>{scheduleStatus.label}</h3>
+            </div>
+            <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${scheduleStatus.bgColor} ${scheduleStatus.color}`}>
+              {scheduleStatus.label}
+            </span>
           </div>
-          <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${scheduleStatus.bgColor} ${scheduleStatus.color}`}>
-            {scheduleStatus.label}
-          </span>
+          <p className="text-sm text-slate-600">
+            {scheduleLoading ? "Memuat jadwal..." : scheduleStatus.description}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[10px] text-slate-500">
+            <div className="p-3 bg-slate-50 rounded-2xl">
+              <p className="font-black uppercase tracking-widest">Jadwal Saat Ini</p>
+              <p className="mt-2 text-slate-700">{currentSchedule ? `${currentSchedule.start}–${currentSchedule.end}` : "Tidak ada kelas berjalan"}</p>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-2xl">
+              <p className="font-black uppercase tracking-widest">Sensor Aktivitas</p>
+              <p className="mt-2 text-slate-700">{room.pirSensor.status === "active" ? "Aktif" : room.irSensor.peopleCount > 0 ? "Orang terdeteksi" : "Tidak ada aktivitas"}</p>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-2xl">
+              <p className="font-black uppercase tracking-widest">Kelas</p>
+              <p className="mt-2 text-slate-700">{currentSchedule ? currentSchedule.subject ?? currentSchedule.class ?? "Kelas terjadwal" : "Tanpa jadwal"}</p>
+            </div>
+          </div>
         </div>
-        <p className="text-sm text-slate-600">
-          {scheduleLoading ? "Memuat jadwal..." : scheduleStatus.description}
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[10px] text-slate-500">
-          <div className="p-3 bg-slate-50 rounded-2xl">
-            <p className="font-black uppercase tracking-widest">Jadwal Saat Ini</p>
-            <p className="mt-2 text-slate-700">{currentSchedule ? `${currentSchedule.start}–${currentSchedule.end}` : "Tidak ada kelas berjalan"}</p>
-          </div>
-          <div className="p-3 bg-slate-50 rounded-2xl">
-            <p className="font-black uppercase tracking-widest">Sensor Aktivitas</p>
-            <p className="mt-2 text-slate-700">{room.pirSensor.status === "active" ? "Aktif" : room.irSensor.peopleCount > 0 ? "Orang terdeteksi" : "Tidak ada aktivitas"}</p>
-          </div>
-          <div className="p-3 bg-slate-50 rounded-2xl">
-            <p className="font-black uppercase tracking-widest">Kelas</p>
-            <p className="mt-2 text-slate-700">{currentSchedule ? currentSchedule.subject ?? currentSchedule.class ?? "Kelas terjadwal" : "Tanpa jadwal"}</p>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* ── BOTTOM ROW: Chart + Jadwal ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

@@ -31,6 +31,7 @@ export interface BookingEntry {
   purpose: string;
   groupSize: number;
   status: "active" | "completed" | "cancelled";
+  day?: string;
 }
 
 export interface Toast {
@@ -121,6 +122,7 @@ function cosmosToEntry(b: CosmosBooking): BookingEntry {
     purpose: b.purpose ?? "",
     groupSize: b.groupSize ?? 0,
     status: (b.status as BookingEntry["status"]) ?? "active",
+    day: b.day,
   };
 }
 
@@ -223,6 +225,7 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
       bookedAt: now,
       startTime, endTime, purpose, groupSize,
       status: "active",
+      day: now.toLocaleDateString("en-US", { weekday: "long" }),
     };
 
     setBookings(prev => ({ ...prev, [roomId]: localEntry }));

@@ -347,7 +347,7 @@ export async function POST(request: Request) {
 
     if (hasEmptyQuestionFlag) {
       const freeRooms = rooms.filter((room) => {
-        const roomSchedule = schedules.some((entry) => entry.roomId === room.id && hasOngoingSchedule(entry, now));
+        const roomSchedule = schedules.some((entry) => entry.roomId === room.id && hasOngoingSchedule(entry, currentSessionNum));
         const sensorStatus = calculateSensorStatus(room.sensor);
         return !roomSchedule && sensorStatus === "empty";
       });

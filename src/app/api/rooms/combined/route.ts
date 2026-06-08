@@ -74,7 +74,7 @@ export async function GET() {
   try {
     // 1. Ambil semua rooms
     const { resources: rooms } = await roomContainer.items
-      .query<CosmosRoom>("SELECT * FROM c ORDER BY c.id ASC")
+      .query<CosmosRoom>("SELECT * FROM c ORDER BY c.id ASC", { maxItemCount: 100 })
       .fetchAll();
 
     // 2. Ambil sensor terbaru (order by timestamp desc), lalu map ke rooms secara fleksibel
@@ -82,7 +82,7 @@ export async function GET() {
     try {
       const sensorResult = await sensorContainer.items
         .query<CosmosSensor>(
-          "SELECT * FROM c ORDER BY c.timestamp DESC OFFSET 0 LIMIT 200"
+          "SELECT TOP 200 * FROM c ORDER BY c.timestamp DESC"
         )
         .fetchAll();
 
@@ -134,9 +134,9 @@ export async function GET() {
         (sensor.temperature > 28 || sensor.humidity < 40 || sensor.humidity > 60);
       const pirActivityLevel = sensor
         ? Math.min(
-            100,
-            Math.round((sensor.motionCount ?? 0) * 2 + (sensor.motionDuration ?? 0) / 1000)
-          )
+          100,
+          Math.round((sensor.motionCount ?? 0) * 2 + (sensor.motionDuration ?? 0) / 1000)
+        )
         : 0;
 
       const displayName = sensor?.roomId && roomMatchesSensor(roomLookupId, sensor.roomId)
@@ -154,11 +154,11 @@ export async function GET() {
         humidity: sensor?.humidity ?? 0,
         pir: sensor
           ? [
-              sensor.motionCount ?? 0,
-              sensor.motionDuration ?? 0,
-              sensor.peopleCount ?? 0,
-              sensor.motionCount ?? 0,
-            ]
+            sensor.motionCount ?? 0,
+            sensor.motionDuration ?? 0,
+            sensor.peopleCount ?? 0,
+            sensor.motionCount ?? 0,
+          ]
           : [],
         wing: room.wing ?? null,
         ledStatus: sensor?.ledStatus ?? "off",
@@ -168,8 +168,8 @@ export async function GET() {
           message: !hasSensor
             ? "Sensor offline atau belum terhubung"
             : dhtWarning
-            ? "Periksa suhu / kelembapan DHT"
-            : "Sensor bekerja normal",
+              ? "Periksa suhu / kelembapan DHT"
+              : "Sensor bekerja normal",
         },
         dhtSensor: {
           temperature: sensor?.temperature ?? 0,
@@ -177,17 +177,17 @@ export async function GET() {
           status: !hasSensor
             ? "offline"
             : (sensor?.temperature ?? 0) > 28
-            ? "high"
-            : (sensor?.humidity ?? 0) < 40
-            ? "low"
-            : (sensor?.humidity ?? 0) > 60
-            ? "high"
-            : "normal",
+              ? "high"
+              : (sensor?.humidity ?? 0) < 40
+                ? "low"
+                : (sensor?.humidity ?? 0) > 60
+                  ? "high"
+                  : "normal",
           health: !hasSensor
             ? "offline"
             : dhtWarning
-            ? "warning"
-            : "ok",
+              ? "warning"
+              : "ok",
           lastUpdated: sensor?.timestamp ?? null,
         },
         irSensor: {
@@ -195,8 +195,8 @@ export async function GET() {
           status: !hasSensor
             ? "offline"
             : (sensor?.peopleCount ?? 0) > 0
-            ? "present"
-            : "absent",
+              ? "present"
+              : "absent",
           lastUpdated: sensor?.timestamp ?? null,
         },
         pirSensor: {
@@ -206,8 +206,8 @@ export async function GET() {
           status: !hasSensor
             ? "offline"
             : pirActivityLevel > 10
-            ? "active"
-            : "inactive",
+              ? "active"
+              : "inactive",
           lastUpdated: sensor?.timestamp ?? null,
         },
       };

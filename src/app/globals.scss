@@ -36,6 +36,23 @@
   --color-foreground: var(--text-primary);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+
+  --color-primary: var(--color-primary);
+  --color-primary-dark: var(--color-primary-dark);
+  --color-secondary: var(--color-secondary);
+
+  --color-blue-50: var(--color-secondary);
+  --color-blue-100: var(--color-secondary);
+  --color-blue-200: var(--color-secondary);
+  --color-blue-500: var(--color-primary);
+  --color-blue-600: var(--color-primary);
+  --color-blue-700: var(--color-primary-dark);
+
+  --color-sky-50: var(--color-secondary);
+  --color-sky-100: var(--color-secondary);
+  --color-sky-500: var(--color-primary);
+  --color-sky-600: var(--color-primary);
+  --color-sky-700: var(--color-primary-dark);
 }
 
 /* ==========================================================================

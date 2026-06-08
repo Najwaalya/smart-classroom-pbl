@@ -36,6 +36,7 @@ export interface Room {
   roomId?: string;
   roomName?: string;
   name?: string;
+  floor?: string | number | null;
   status: RoomStatus;
   students: number;
   temp: number;
@@ -106,6 +107,7 @@ export const RoomDataProvider = ({ children }: { children: React.ReactNode }) =>
             humidity: room.humidity ?? 0,
             pir: Array.isArray(room.pir) ? room.pir : [],
             wing: room.wing ?? null,
+            floor: room.floor ?? null,
             ledStatus: room.ledStatus ?? "off",
             lastUpdated: room.lastUpdated ?? null,
             sensorHealth: room.sensorHealth || {

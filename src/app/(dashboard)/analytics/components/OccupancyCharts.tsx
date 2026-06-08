@@ -59,8 +59,8 @@ export default function OccupancyChart({
             <Area
               type="monotone"
               dataKey="occupancy"
-              stroke="#2563eb"
-              fill="#93c5fd"
+              stroke="var(--color-primary)"
+              fill="var(--color-secondary)"
             />
 
           </AreaChart>

@@ -171,6 +171,16 @@ export default function BookingPage() {
     string | null
   >(null);
 
+  const [
+    bookingError,
+    setBookingError,
+  ] = useState<string | null>(null);
+
+  const [
+    bookingSuccess,
+    setBookingSuccess,
+  ] = useState<string | null>(null);
+
   // =========================================
   // FETCH BOOKINGS
   // =========================================
@@ -394,52 +404,62 @@ export default function BookingPage() {
   async function addBooking(
     record: BookingRecord
   ) {
+    setBookingError(null);
+    setBookingSuccess(null);
 
     try {
+      // Hitung tanggal dari hari yang dipilih (hari ini atau mendatang)
+      const today = new Date();
+      const dayIndexMap: Record<string, number> = {
+        Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
+        Thursday: 4, Friday: 5, Saturday: 6,
+      };
+      const targetDayIndex = dayIndexMap[record.day] ?? today.getDay();
+      const currentDayIndex = today.getDay();
+      const diff = (targetDayIndex - currentDayIndex + 7) % 7;
+      const targetDate = new Date(today);
+      targetDate.setDate(today.getDate() + diff);
+      const dateStr = targetDate.toISOString().split("T")[0]; // YYYY-MM-DD
 
-      const response =
-        await fetch(
-          "/api/bookings",
-          {
-            method:
-              "POST",
+      const payload = {
+        roomId: record.roomId,
+        day: record.day,
+        date: dateStr,
+        startTime: record.startTime,
+        endTime: record.endTime,
+        purpose: record.purpose,
+        bookedBy: record.bookedBy,
+        bookedById: record.bookedById ?? myId,
+        userId: myId,
+        userClass: userInfo?.class ?? "-",
+      };
 
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
+      console.log("[addBooking] Sending payload:", payload);
 
-            body:
-              JSON.stringify(
-                {
-                  ...record,
+      const response = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-                  userId:
-                    myId,
+      const json = await response.json();
+      console.log("[addBooking] API response:", json);
 
-                  userClass:
-                    userInfo?.class ??
-                    "-",
-                }
-              ),
-          }
-        );
-
-      if (
-        !response.ok
-      ) {
-        throw new Error(
-          "Failed create booking"
-        );
+      if (!response.ok || !json.success) {
+        const msg = json?.message ?? "Gagal membuat booking. Silakan coba lagi.";
+        setBookingError(msg);
+        setTimeout(() => setBookingError(null), 6000);
+        return;
       }
 
-      mutate();
+      setBookingSuccess(`Booking berhasil! Ruangan ${record.roomId} telah dipesan.`);
+      setTimeout(() => setBookingSuccess(null), 5000);
+      await mutate(undefined, { revalidate: true });
 
     } catch (error) {
-
-      console.error(
-        error
-      );
+      console.error("[addBooking] Network error:", error);
+      setBookingError("Koneksi gagal. Pastikan server berjalan dan coba lagi.");
+      setTimeout(() => setBookingError(null), 6000);
     }
   }
 
@@ -450,33 +470,19 @@ export default function BookingPage() {
   async function cancelBooking(
     id: string
   ) {
-
     try {
+      // DELETE menggunakan query param ?id= sesuai route handler
+      const response = await fetch(`/api/bookings?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
 
-      const response =
-        await fetch(
-          `/api/bookings/${id}`,
-          {
-            method:
-              "DELETE",
-          }
-        );
-
-      if (
-        !response.ok
-      ) {
-        throw new Error(
-          "Failed delete booking"
-        );
+      if (!response.ok) {
+        throw new Error("Failed delete booking");
       }
 
       mutate();
-
     } catch (error) {
-
-      console.error(
-        error
-      );
+      console.error("[cancelBooking] Error:", error);
     }
   }
 
@@ -746,7 +752,7 @@ export default function BookingPage() {
   // LOADING
   // =========================================
 
-  if (isLoading || schedulesLoading) {
+  if (isLoading || schedulesLoading || bookingsData === undefined) {
 
     return (
       <div className="page-wrapper">
@@ -860,9 +866,62 @@ export default function BookingPage() {
           </div>
         )}
 
+        {/* BOOKING ERROR */}
+
+        {bookingError && (
+          <div
+            className="
+              flex items-start gap-3
+              p-4
+              bg-red-50
+              rounded-2xl
+              border border-red-200
+            "
+          >
+            <AlertTriangle
+              size={16}
+              className="text-red-500 shrink-0 mt-0.5"
+            />
+            <div className="flex-1">
+              <p className="text-sm font-black text-red-800">Booking Gagal</p>
+              <p className="text-xs text-red-600 mt-0.5">{bookingError}</p>
+            </div>
+            <button onClick={() => setBookingError(null)}>
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {/* BOOKING SUCCESS */}
+
+        {bookingSuccess && (
+          <div
+            className="
+              flex items-start gap-3
+              p-4
+              bg-emerald-50
+              rounded-2xl
+              border border-emerald-200
+            "
+          >
+            <Info
+              size={16}
+              className="text-emerald-500 shrink-0 mt-0.5"
+            />
+            <div className="flex-1">
+              <p className="text-sm font-black text-emerald-800">Booking Berhasil! 🎉</p>
+              <p className="text-xs text-emerald-600 mt-0.5">{bookingSuccess}</p>
+            </div>
+            <button onClick={() => setBookingSuccess(null)}>
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         {/* BOOKING FORM */}
 
         <BookingForm
+          key={bookings.length}
           selectedFloor={
             selectedFloor
           }

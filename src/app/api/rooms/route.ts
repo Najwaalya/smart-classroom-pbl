@@ -3,7 +3,7 @@ import { roomContainer } from "@/lib/cosmos";
 
 interface CosmosRoom {
   id: string;
-
+  roomId?: string;
   roomName?: string;
   name?: string;
   wing?: string | null;
@@ -26,6 +26,7 @@ export async function GET(request: Request) {
 
     const rooms = cosmosRooms.map((room) => ({
       id: room.id,
+      roomId: room.roomId ?? room.id,
       name: room.roomName || room.name || room.id,
       wing: room.wing ?? null,
       floor: room.floor ?? null,

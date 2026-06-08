@@ -24,7 +24,7 @@ interface CosmosSensor {
 async function isRoomOccupied(roomId: string): Promise<boolean> {
   try {
     const querySpec = {
-      query: "SELECT * FROM c WHERE c.roomId = @roomId ORDER BY c.timestamp DESC LIMIT 1",
+      query: "SELECT TOP 1 * FROM c WHERE c.roomId = @roomId ORDER BY c.timestamp DESC",
       parameters: [{ name: "@roomId", value: roomId }],
     };
 
@@ -32,19 +32,23 @@ async function isRoomOccupied(roomId: string): Promise<boolean> {
       .query<CosmosSensor>(querySpec)
       .fetchAll();
 
-    if (sensors.length === 0) return false;
+    if (sensors.length === 0) {
+      console.log(`[isRoomOccupied] No sensor data for ${roomId} — treating as empty`);
+      return false;
+    }
 
     const latestSensor = sensors[0];
-    
-    // Room is considered occupied if:
-    // 1. People count > 0, OR
-    // 2. Motion detected recently (motionDuration < 5 minutes)
+    console.log(`[isRoomOccupied] Latest sensor for ${roomId}:`, JSON.stringify(latestSensor));
+
+    // Room is considered occupied only if people count > 0
+    // motionDuration alone is NOT reliable (0 would pass < 300000)
     const hasPeople = (latestSensor.peopleCount ?? 0) > 0;
-    const hasRecentMotion = (latestSensor.motionDuration ?? 0) < 300000; // 5 minutes in ms
-    
-    return hasPeople || hasRecentMotion;
+
+    console.log(`[isRoomOccupied] ${roomId} — hasPeople: ${hasPeople}`);
+    return hasPeople;
   } catch (error) {
-    console.error("Error checking room occupancy:", error);
+    console.error("[isRoomOccupied] Error:", error);
+    // Default: allow booking when sensor check fails
     return false;
   }
 }
@@ -65,9 +69,21 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    console.log("[POST /api/bookings] Request body:", JSON.stringify(body, null, 2));
+
+    // Validasi field wajib
+    if (!body.roomId || !body.date || !body.startTime || !body.endTime) {
+      console.error("[POST /api/bookings] Missing required fields", body);
+      return NextResponse.json(
+        { success: false, message: "Field wajib (roomId, date, startTime, endTime) tidak boleh kosong" },
+        { status: 400 }
+      );
+    }
 
     // Check if room is currently occupied
     const isOccupied = await isRoomOccupied(body.roomId);
+    console.log(`[POST /api/bookings] Room ${body.roomId} occupied: ${isOccupied}`);
+
     if (isOccupied) {
       return NextResponse.json(
         {
@@ -79,6 +95,7 @@ export async function POST(request: Request) {
     }
 
     const result = await createBooking(body);
+    console.log("[POST /api/bookings] createBooking result:", JSON.stringify(result));
 
     if (!result.success) {
       return NextResponse.json(result, { status: 400 });
@@ -86,9 +103,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
-    console.error("POST /api/bookings error:", error);
+    console.error("[POST /api/bookings] ERROR:", error);
     return NextResponse.json(
-      { success: false, message: "Failed to create booking" },
+      { success: false, message: "Failed to create booking: " + String(error) },
       { status: 500 }
     );
   }

@@ -19,7 +19,27 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const result = await createSchedule(body);
+    
+    // Support both new payload structure and old format
+    const roomId = body.roomId ?? body.room;
+    const day = body.day;
+    const sessionStart = body.startSlot !== undefined ? Number(body.startSlot) : Number(body.sessionStart ?? 0);
+    const sessionEnd = body.endSlot !== undefined ? Number(body.endSlot) : Number(body.sessionEnd ?? sessionStart);
+    const className = body.className ?? body.class ?? "";
+
+    const mappedSchedule = {
+      roomId,
+      day,
+      sessionStart,
+      sessionEnd,
+      class: className,
+      semester: body.semester || "Genap",
+      academicYear: body.academicYear || "2025/2026",
+      subject: body.subject || "",
+      lecturer: body.lecturer || ""
+    };
+
+    const result = await createSchedule(mappedSchedule);
 
     if (!result.success) {
       return NextResponse.json(result, { status: 400 });

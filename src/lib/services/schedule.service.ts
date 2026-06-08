@@ -128,7 +128,7 @@ export async function createSchedule(
         updatedAt: new Date().toISOString(),
       };
       const { resource } = await scheduleContainer.items.create(newSchedule);
-      return { success: true, schedules: [resource] };
+      return { success: true, schedules: resource ? [resource] : [] };
     }
 
     // Loop from start to end inclusive and create one document per hour slot
@@ -149,7 +149,9 @@ export async function createSchedule(
       };
 
       const { resource } = await scheduleContainer.items.create(slotSchedule);
-      created.push(resource);
+      if (resource) {
+        created.push(resource);
+      }
     }
 
     return { success: true, schedules: created };
