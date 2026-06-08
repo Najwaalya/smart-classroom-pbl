@@ -13,11 +13,11 @@ import { getRole } from "@/lib/auth";
 import { useState, useEffect } from "react";
 
 interface SidebarProps {
-  open: boolean;
-  onClose: () => void;
+  sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
 }
 
-export function Sidebar({ open, onClose }: SidebarProps) {
+export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
   const pathname = usePathname();
 
   const [role, setRole] = useState<string | null>(null);
@@ -67,55 +67,44 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   return (
     <>
       {/* MOBILE OVERLAY */}
-      {open && (
+      {sidebarOpen && (
         <div
           className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-20 lg:hidden"
-          onClick={onClose}
+          onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* SIDEBAR */}
       <aside
         className={`
-          fixed top-0 left-0 z-30 h-full w-64
-          bg-white/60 backdrop-blur-xl
-          border-r border-white/50 shadow
+          fixed top-0 left-0 z-30 h-full
+          bg-[var(--background-card)]
+          border-r border-slate-200 shadow-sm
           flex flex-col
-          transition-transform duration-300
+          transition-all duration-200
+          overflow-x-hidden
 
-          ${open ? "translate-x-0" : "-translate-x-full"}
-
-          lg:translate-x-0
           lg:top-16
           lg:h-[calc(100vh-64px)]
-          lg:bg-transparent
-          lg:shadow-none
+
+          ${sidebarOpen ? "w-56 translate-x-0" : "w-0 lg:w-16 -translate-x-full lg:translate-x-0"}
         `}
       >
         {/* MOBILE HEADER */}
-        <div className="flex items-center justify-between px-6 pt-6 pb-2 lg:hidden">
-          <span className="font-black text-xl">
-            SmartClass
-          </span>
-
-          <button onClick={onClose}>
+        <div className="flex items-center justify-between px-4 pt-6 pb-2 lg:hidden">
+          <button onClick={() => setSidebarOpen(false)} className="ml-auto p-1">
             <X size={18} />
           </button>
         </div>
 
         {/* MENU */}
-        <div className="px-5 py-8 flex flex-col flex-1">
-          {/* DESKTOP TITLE */}
-          <h2 className="font-black text-lg mb-1 hidden lg:block">
-            SmartClass
-          </h2>
-
-          <p className="text-[10px] text-slate-400 mb-8 hidden lg:block">
-            Monitoring Kelas IoT
-          </p>
-
+        <div
+          className={`py-4 flex flex-col flex-1 overflow-hidden ${
+            !sidebarOpen ? "px-2" : "px-3"
+          }`}
+        >
           {/* NAVIGATION */}
-          <nav className="flex flex-col gap-2">
+          <nav className="flex flex-col gap-1">
             {navItems.map((item) => {
               const isActive =
                 item.href === "/"
@@ -128,13 +117,18 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                 <Link
                   key={item.name}
                   href={item.href}
-                  onClick={onClose}
+                  onClick={() => {
+                    if (window.innerWidth < 1024) {
+                      setSidebarOpen(false);
+                    }
+                  }}
+                  title={!sidebarOpen ? item.name : undefined}
                   className={`
                     flex items-center gap-3
-                    px-4 py-3
+                    px-3 py-3
                     rounded-xl
                     transition-all duration-200
-
+                    ${!sidebarOpen ? "justify-center" : ""}
                     ${
                       isActive
                         ? "bg-blue-600 text-white shadow-lg"
@@ -142,11 +136,13 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                     }
                   `}
                 >
-                  <Icon size={18} />
+                  <Icon size={18} className="shrink-0" />
 
-                  <span className="text-sm font-bold">
-                    {item.name}
-                  </span>
+                  {sidebarOpen && (
+                    <span className="text-sm font-bold whitespace-nowrap overflow-hidden">
+                      {item.name}
+                    </span>
+                  )}
                 </Link>
               );
             })}

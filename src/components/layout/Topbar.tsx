@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   HelpCircle,
   Search,
-  Menu,
   ChevronDown,
   LogOut,
   KeyRound,
@@ -26,11 +25,13 @@ import {
 import ChangePasswordModal from "@/components/auth/ChangePasswordModal";
 
 interface TopbarProps {
-  onMenuToggle: () => void;
+  sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
 }
 
 export function Topbar({
-  onMenuToggle,
+  sidebarOpen,
+  setSidebarOpen,
 }: TopbarProps) {
 
   const pathname = usePathname();
@@ -132,14 +133,15 @@ export function Topbar({
       <header className="h-16 bg-white/70 backdrop-blur-md border-b border-white/50 flex items-center justify-between px-4 md:px-6 fixed top-0 left-0 right-0 z-20 w-full shadow-[0_4px_30px_rgba(0,0,0,0.02)]">
 
         {/* LEFT */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
 
-          {/* MOBILE MENU */}
+          {/* HAMBURGER MENU TOGGLE */}
           <button
-            onClick={onMenuToggle}
-            className="lg:hidden text-slate-500 hover:text-[var(--color-primary)] transition-colors p-1.5 rounded-md hover:bg-slate-100/50"
+            onClick={() => setSidebarOpen(prev => !prev)}
+            title="Toggle Sidebar"
+            className="flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:text-[var(--color-primary)] hover:bg-slate-100/70 transition-colors cursor-pointer mr-1"
           >
-            <Menu size={22} />
+            <i className="ti ti-menu-2 text-xl"></i>
           </button>
 
           {/* LOGO */}
@@ -150,34 +152,6 @@ export function Topbar({
             SmartClass
           </Link>
 
-          {/* ROOM NAVIGATION */}
-          {isRoomView && (
-            <nav className="hidden md:flex items-center gap-6 text-sm font-bold ml-6">
-              {[
-                {
-                  href: "/",
-                  label: "Ringkasan",
-                },
-
-                {
-                  href: "/analytics",
-                  label: "Analitik",
-                },
-              ].map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`pb-[21px] pt-[21px] border-b-2 transition-all duration-300 ${
-                    pathname === item.href
-                      ? "text-[var(--color-primary)] border-[var(--color-primary)]"
-                      : "text-slate-400 border-transparent hover:text-slate-800"
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          )}
         </div>
 
         {/* RIGHT */}

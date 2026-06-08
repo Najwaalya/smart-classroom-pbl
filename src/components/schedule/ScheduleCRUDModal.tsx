@@ -22,6 +22,8 @@ interface ScheduleCRUDModalProps {
   onSave: (data: ScheduleFormData, originalEntry?: ScheduleEntry) => void;
   onClose: () => void;
   onDeleted?: () => void;
+  /** Called when admin clicks "Hapus Jadwal" — parent shows its own confirm dialog */
+  onRequestDelete?: (entry: ScheduleEntry) => void;
 }
 
 function timeToMinutes(t: string) {
@@ -37,6 +39,7 @@ export default function ScheduleCRUDModal({
   onSave,
   onClose,
   onDeleted,
+  onRequestDelete,
 }: ScheduleCRUDModalProps) {
   const [form, setForm] = useState<ScheduleFormData>({
     room: initialData?.room ?? "",
@@ -273,36 +276,18 @@ export default function ScheduleCRUDModal({
             {mode === "edit" && initialData && (
               <button
                 type="button"
-                onClick={async () => {
+                onClick={() => {
                   if (!initialData || !(initialData as any).id) {
                     setError("Tidak ada ID jadwal untuk dihapus.");
                     return;
                   }
-                  const id = (initialData as any).id as string;
-                  if (!confirm(`Yakin ingin menghapus jadwal di ${initialData.room} (${initialData.start}–${initialData.end})?`)) return;
-                  try {
-                    setIsDeleting(true);
-                    const res = await fetch(`/api/schedules/${encodeURIComponent(id)}`, { method: "DELETE" });
-                    const json = await res.json();
-                    if (!res.ok) {
-                      setError(json?.error ?? "Gagal menghapus jadwal");
-                      setIsDeleting(false);
-                      return;
-                    }
-                    // Close modal and notify parent to refresh
-                    onClose();
-                    if (typeof onDeleted === "function") onDeleted();
-                  } catch (err) {
-                    console.error("Hapus jadwal error:", err);
-                    setError("Gagal menghapus jadwal");
-                  } finally {
-                    setIsDeleting(false);
-                  }
+                  // Close CRUD modal first, then let parent show its confirm dialog
+                  onClose();
+                  onRequestDelete?.(initialData);
                 }}
                 className="px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-black transition-colors"
-                disabled={isDeleting}
               >
-                {isDeleting ? "Menghapus..." : "Hapus Jadwal"}
+                Hapus Jadwal
               </button>
             )}
 

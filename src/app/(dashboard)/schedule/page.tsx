@@ -8,7 +8,7 @@ import {
   Info, CheckCircle, Plus, Download, Trash2, CalendarDays,
 } from "lucide-react";
 import {
-  DAYS, FLOORS, TIME_SLOTS, toMin, getRoomsForFloor, getScheduleForSlot,
+  DAYS, FLOORS, FLOOR_SUFFIX, TIME_SLOTS, toMin, getRoomsForFloor, getScheduleForSlot,
   sessionToTime, normalizeDayKey,
 } from "@/lib/schedule-utils";
 import { ScheduleEntry } from "@/lib/schedule";
@@ -40,6 +40,10 @@ export default function SchedulePage() {
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirm>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // ── ADMIN filter state ────────────────────────────
+  const [adminSelectedFloor, setAdminSelectedFloor] = useState<string>("5");
+  const [adminSelectedRoom, setAdminSelectedRoom] = useState<string | null>(null);
 
   // ── MAHASISWA state ──────────────────────────────
   const [selectedFloor, setSelectedFloor] = useState<string>("5");
@@ -130,13 +134,16 @@ export default function SchedulePage() {
       const roomIdVal = matchedRoom ? (matchedRoom.roomId ?? matchedRoom.id) : undefined;
 
       return {
-        id:    String(c.id ?? ""),
-        room:  rawRoom,
+        id:      String(c.id ?? ""),
+        room:    rawRoom,
         roomName: roomName,
-        roomId: roomIdVal,
-        day:   normalizeDayKey(String(c.day ?? "")),
-        start: convertedStart?.startTime ?? String(c.startTime ?? c.start ?? ""),
-        end:   convertedEnd?.endTime     ?? String(c.sessionEnd ?? c.endTime ?? c.end ?? ""),
+        roomId:  roomIdVal,
+        day:     normalizeDayKey(String(c.day ?? "")),
+        start:   convertedStart?.startTime ?? String(c.startTime ?? c.start ?? ""),
+        end:     convertedEnd?.endTime     ?? String(c.sessionEnd ?? c.endTime ?? c.end ?? ""),
+        class:   String(c.class ?? c.className ?? ""),
+        subject: String(c.subject ?? ""),
+        lecturer: String(c.lecturer ?? ""),
       };
     });
     setAllSchedules(cosmosEntries);
@@ -145,6 +152,35 @@ export default function SchedulePage() {
 
   // ── Derived ──────────────────────────────────────
   const customIds = useMemo(() => new Set<string>(), []);
+
+  // ── Admin filter derived ──────────────────────────
+  const adminRoomsOnFloor = useMemo(() => {
+    const suffixes = FLOOR_SUFFIX[adminSelectedFloor] ?? [];
+    const seen = new Set<string>();
+    allSchedules.forEach(s => {
+      const roomName: string = s.roomId || s.room || "";
+      if (!roomName) return;
+      const matchesSuffix = suffixes.some((sfx: string) => roomName.endsWith(sfx));
+      const matchesFallback = !matchesSuffix &&
+        (roomName.includes(`-${adminSelectedFloor}`) || roomName.includes(`_${adminSelectedFloor}`));
+      if (matchesSuffix || matchesFallback) seen.add(roomName);
+    });
+    return Array.from(seen).sort();
+  }, [allSchedules, adminSelectedFloor]);
+
+  // Reset selected room when floor changes or new room list no longer contains it
+  useEffect(() => {
+    if (adminSelectedRoom && !adminRoomsOnFloor.includes(adminSelectedRoom)) {
+      setAdminSelectedRoom(adminRoomsOnFloor[0] ?? null);
+    } else if (!adminSelectedRoom && adminRoomsOnFloor.length > 0) {
+      setAdminSelectedRoom(adminRoomsOnFloor[0]);
+    }
+  }, [adminRoomsOnFloor, adminSelectedRoom]);
+
+  const adminFilteredSchedules = useMemo(() => {
+    if (!adminSelectedRoom) return [];
+    return allSchedules.filter(s => (s.roomId || s.room) === adminSelectedRoom);
+  }, [allSchedules, adminSelectedRoom]);
 
   // ── CRUD handlers ────────────────────────────────
   async function handleSave(data: ScheduleFormData, originalEntry?: ScheduleEntry) {
@@ -304,7 +340,9 @@ export default function SchedulePage() {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button
-                onClick={() => setModalState({ open: true, mode: "add", day: "Monday" })}
+                onClick={() => setModalState({
+                  open: true, mode: "add", day: "Monday",
+                })}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[var(--color-primary)] to-blue-500 text-white text-sm font-black hover:from-[var(--color-primary-dark)] hover:to-blue-600 transition-all shadow-lg shadow-blue-900/20"
               >
                 <Plus size={15} />
@@ -324,40 +362,103 @@ export default function SchedulePage() {
             <Info size={15} className="text-[var(--color-primary)] shrink-0 mt-0.5" />
             <p className="text-xs text-slate-600 leading-relaxed">
               <span className="font-black text-slate-800">Panduan Admin:</span>{" "}
-              Pilih kelas untuk melihat timetable. Hover sel jadwal untuk aksi Edit/Hapus.
+              Pilih lantai dan ruangan untuk melihat timetable. Hover sel jadwal untuk aksi Edit/Hapus.
               Klik <span className="font-black text-[var(--color-primary)]">+ Tambah Jadwal</span> untuk menambah jadwal baru.
               Semua jadwal tersimpan di Cosmos DB.
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <div className="sm:ml-auto flex gap-3">
-              <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 text-xs">
-                <span className="w-2.5 h-2.5 rounded-sm bg-blue-300" />
-                <span className="text-slate-500 font-bold">Jadwal Kelas</span>
+          {/* ── Filter Lantai & Ruangan ───────────────── */}
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lantai</span>
+              <div className="flex bg-white/70 p-1 rounded-xl shadow-sm border border-slate-200 gap-0.5">
+                {FLOORS.map(f => (
+                  <button
+                    key={f}
+                    onClick={() => {
+                      setAdminSelectedFloor(f);
+                      setAdminSelectedRoom(null);
+                    }}
+                    className={`px-5 py-2 rounded-lg text-xs font-black transition-all ${
+                      adminSelectedFloor === f
+                        ? "bg-[var(--color-primary)] text-white shadow-sm"
+                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                    }`}
+                  >
+                    Lt. {f}
+                  </button>
+                ))}
               </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ruangan</span>
+              {adminRoomsOnFloor.length > 0 ? (
+                <div className="flex bg-white/70 p-1 rounded-xl shadow-sm border border-slate-200 gap-0.5 flex-wrap">
+                  {adminRoomsOnFloor.map(room => (
+                    <button
+                      key={room}
+                      onClick={() => setAdminSelectedRoom(room)}
+                      className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${
+                        adminSelectedRoom === room
+                          ? "bg-[var(--color-primary)] text-white shadow-sm"
+                          : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                      }`}
+                    >
+                      {room}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic py-2">
+                  Tidak ada jadwal di lantai ini.
+                </p>
+              )}
             </div>
           </div>
 
-          <Timetable
-            schedules={allSchedules}
-            selectedClass=""
-            editable={true}
-            customIds={customIds}
-            onAdd={(day) => setModalState({ open: true, mode: "add", day })}
-            onEdit={(entry, isCustom) => setModalState({ open: true, mode: "edit", entry, isCustom })}
-            onDelete={(entry) => setDeleteConfirm({ entry })}
-          />
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 text-xs">
+              <span className="w-2.5 h-2.5 rounded-sm bg-blue-300" />
+              <span className="text-slate-500 font-bold">Jadwal Kelas</span>
+            </div>
+          </div>
+
+          {/* ── Timetable atau placeholder ────────────── */}
+          {adminSelectedRoom ? (
+            <Timetable
+              schedules={adminFilteredSchedules}
+              selectedClass=""
+              editable={true}
+              customIds={customIds}
+              onAdd={(day) => setModalState({ open: true, mode: "add", day })}
+              onEdit={(entry, isCustom) => setModalState({ open: true, mode: "edit", entry, isCustom })}
+              onDelete={(entry) => setDeleteConfirm({ entry })}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 py-16 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60">
+              <CalendarDays size={36} className="text-slate-300" />
+              <p className="text-sm font-bold text-slate-400">Pilih lantai dan ruangan untuk melihat jadwal</p>
+            </div>
+          )}
         </div>
 
         {modalState.open && (
           <ScheduleCRUDModal
             mode={modalState.mode}
             initialDay={modalState.mode === "add" ? modalState.day : undefined}
-            initialData={modalState.mode === "edit" ? modalState.entry : undefined}
+            initialData={
+              modalState.mode === "edit"
+                ? modalState.entry
+                : adminSelectedRoom
+                  ? { room: adminSelectedRoom, day: modalState.day, start: "", end: "", className: "" } as any
+                  : undefined
+            }
             allSchedules={allSchedules}
             onSave={handleSave}
             onClose={() => setModalState({ open: false })}
+            onRequestDelete={(entry) => setDeleteConfirm({ entry })}
             onDeleted={async () => {
               try {
                 await mutateSchedules();
