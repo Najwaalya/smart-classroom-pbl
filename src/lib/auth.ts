@@ -10,61 +10,61 @@ export type User = {
   class?: string;
 };
 
-const users: User[] = [
-  {
-    email: "admin@gmail.com",
-    nip: "197805122005011002",
-    password: "197805122005011002",
-    role: "admin",
-    name: "Sri Whariyanti, S.S.",
-  },
-  {
-    nim: "2341720024",
-    password: "2341720024",
-    role: "student",
-    name: "Moch. A.B.A",
-  },
-];
+/**
+ * Login — memanggil API /api/auth/login yang terhubung ke CosmosDB.
+ * Mengembalikan object user jika berhasil, null jika gagal.
+ */
+export async function login(identifier: string, password: string): Promise<User | null> {
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, password }),
+    });
 
-export function login(identifier: string, password: string) {
-  const user = users.find((u) => {
-    // Login admin → email + NIP
-    if (u.role === "admin") {
-      return (
-        u.email === identifier &&
-        u.password === password
-      );
+    const data = await res.json();
+
+    if (!res.ok || !data.success || !data.user) {
+      return null;
     }
 
-    // Login student → NIM + NIM
-    if (u.role === "student") {
-      return (
-        u.nim === identifier &&
-        u.password === password
-      );
+    const user = data.user as {
+      id: string;
+      name: string;
+      role: UserRole;
+      email?: string;
+      nim?: string;
+      nip?: string;
+      class?: string;
+    };
+
+    // Simpan ke localStorage agar getRole() / getUserInfo() bisa membacanya
+    localStorage.setItem("role",     user.role);
+    localStorage.setItem("userName", user.name);
+    localStorage.setItem("userId",   user.nip ?? user.nim ?? user.id);
+
+    if (user.class) {
+      localStorage.setItem("userClass", user.class);
     }
 
-    return false;
-  });
+    // Set cookie role untuk middleware server-side
+    document.cookie = `role=${user.role}; path=/; max-age=86400`;
 
-  if (!user) return null;
-
-  localStorage.setItem("role", user.role);
-  localStorage.setItem("userName", user.name);
-
-  if (user.role === "admin") {
-    localStorage.setItem("userId", user.nip || "");
-  } else {
-    localStorage.setItem("userId", user.nim || "");
+    return {
+      role:     user.role,
+      name:     user.name,
+      password: "",          // tidak perlu disimpan di client
+      email:    user.email,
+      nim:      user.nim,
+      nip:      user.nip,
+      class:    user.class,
+    };
+  } catch (err) {
+    console.error("[auth] login error:", err);
+    return null;
   }
-
-  // Set role cookie for server-side middleware auth
-  if (typeof window !== "undefined") {
-    document.cookie = "role=" + user.role + "; path=/; max-age=86400";
-  }
-
-  return user;
 }
+
 
 export function getRole(): UserRole | null {
   if (typeof window === "undefined") return null;
@@ -100,23 +100,36 @@ export function logout() {
   }
 }
 
-export function changePassword(
+/**
+ * Ganti password via API (terhubung ke CosmosDB).
+ * isForgotPassword=true → skip verifikasi password lama.
+ */
+export async function changePassword(
   email: string,
   oldPassword: string,
   newPassword: string,
   isForgotPassword: boolean = false
-): boolean {
-  const user = users.find((u) => u.email === email || u.nim === email);
+): Promise<boolean> {
+  try {
+    const endpoint = isForgotPassword
+      ? "/api/auth/reset-password"
+      : "/api/auth/reset-password";
 
-  if (!user) {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        identifier: email,
+        oldPassword: isForgotPassword ? undefined : oldPassword,
+        newPassword,
+        isForgotPassword,
+      }),
+    });
+
+    const data = await res.json();
+    return res.ok && data.success === true;
+  } catch (err) {
+    console.error("[auth] changePassword error:", err);
     return false;
   }
-
-  // Jika forgot password, skip verifikasi password lama
-  if (!isForgotPassword && user.password !== oldPassword) {
-    return false;
-  }
-
-  user.password = newPassword;
-  return true;
 }

@@ -27,6 +27,7 @@ export interface BookingOption {
 export interface BookingFormProps {
   selectedFloor: string;
   selectedDay: string;
+  onDayChange: (day: string) => void;
   roomsForFloor: BookingOption[];
   onBooked: (record: BookingRecord) => void;
   checkSlotBlocked: (roomId: string, day: string, slot: typeof TIME_SLOTS[0]) => boolean;
@@ -35,6 +36,7 @@ export interface BookingFormProps {
 export function BookingForm({
   selectedFloor,
   selectedDay,
+  onDayChange,
   roomsForFloor,
   onBooked,
   checkSlotBlocked,
@@ -50,7 +52,7 @@ export function BookingForm({
 
   useEffect(() => {
     if (roomsForFloor.length > 0) {
-      setRoomId(roomsForFloor[0]);
+      setRoomId(roomsForFloor[0].id);
     }
   }, [roomsForFloor]);
 
@@ -159,29 +161,43 @@ export function BookingForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Pilih Ruangan */}
-        <div>
-          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Ruangan</label>
-          <select
-            value={roomId}
-            onChange={e => setRoomId(e.target.value)}
-            className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-black text-slate-800 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] transition-all"
-          >
-            {roomsForFloor.map((room) => (
-              <option key={room.id} value={room.id}>
-                {room.label}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* Pilih Ruangan */}
+      <div>
+        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Ruangan</label>
+        <select
+          value={roomId}
+          onChange={e => setRoomId(e.target.value)}
+          className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-black text-slate-800 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] transition-all"
+        >
+          {roomsForFloor.map((room) => (
+            <option key={room.id} value={room.id}>
+              {room.label}
+            </option>
+          ))}
+        </select>
+      </div>
 
-        {/* Hari (read-only) */}
-        <div>
-          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Hari</label>
-          <div className="px-3 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-sm font-black text-slate-600">
-            {dayLabel}
-          </div>
+      {/* Pilih Hari */}
+      <div>
+        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Hari</label>
+        <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-200 gap-1">
+          {DAYS.map(d => (
+            <button
+              key={d.key}
+              type="button"
+              onClick={() => {
+                onDayChange(d.key);
+                setSelectedSlots([]);
+              }}
+              className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${
+                selectedDay === d.key
+                  ? "bg-[var(--color-primary)] text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-white"
+              }`}
+            >
+              {d.short}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -199,16 +215,22 @@ export function BookingForm({
                 type="button"
                 onClick={() => !isBlocked && toggleSlot(slot.slot)}
                 disabled={isBlocked}
-                className={`px-3 py-2 rounded-lg text-xs font-black border transition-all ${
+                title={isBlocked ? `Slot ${slot.slot} (${slot.start}–${slot.end}) sudah terisi jadwal kelas` : `Slot ${slot.slot}: ${slot.start}–${slot.end}`}
+                className={`relative px-2 py-2 rounded-lg text-xs font-black border transition-all flex flex-col items-center justify-center gap-0.5 ${
                   isBlocked
-                    ? "bg-red-100 text-red-400 border-red-200 cursor-not-allowed opacity-50"
+                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
                     : isSelected
                     ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)] shadow-sm"
-                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                    : "bg-white text-slate-600 border-slate-200 hover:border-[var(--color-primary)] hover:bg-blue-50 hover:text-[var(--color-primary)]"
                 }`}
               >
-                <div>{slot.slot}</div>
+                <div className="font-black">{slot.slot}</div>
                 <div className="text-[9px] opacity-75">{slot.start}</div>
+                {isBlocked && (
+                  <div className="text-[8px] font-black text-red-400 leading-none mt-0.5 bg-red-50 px-1 py-0.5 rounded">
+                    Terisi
+                  </div>
+                )}
               </button>
             );
           })}

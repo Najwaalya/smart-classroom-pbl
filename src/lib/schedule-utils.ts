@@ -24,7 +24,10 @@ export const TIME_SLOTS = [
 ];
 
 export const FLOOR_SUFFIX: Record<string, string[]> = {
-  "5": ["_5B"], "6": ["_6T"], "7": ["_7T", "_7B"], "8": ["_8T"],
+  "5": ["_5B", "-5T", "-5B"],
+  "6": ["_6T", "-6T"],
+  "7": ["_7T", "_7B", "-7T", "-7B"],
+  "8": ["_8T", "-8T"],
 };
 export const FLOORS = ["5", "6", "7", "8"];
 
@@ -46,13 +49,40 @@ export function toMin(t: string): number {
   return h * 60 + m;
 }
 
+/**
+ * Normalisasi nama hari ke English key ("Monday", "Tuesday", dst.)
+ * Menerima format: English ("Monday"), Indonesian ("Senin"), short ("Sen")
+ */
+export function normalizeDayKey(day: string): string {
+  if (!day) return day;
+  const lower = day.toLowerCase().trim();
+  const found = DAYS.find(
+    d =>
+      d.key.toLowerCase() === lower ||
+      d.label.toLowerCase() === lower ||
+      d.short.toLowerCase() === lower ||
+      // prefix match: "senin" starts with "sen", "monday" starts with "mon"
+      lower.startsWith(d.short.toLowerCase()) ||
+      d.label.toLowerCase().startsWith(lower.substring(0, 3))
+  );
+  return found ? found.key : day;
+}
+
 export function getRoomsForFloor(floor: string, schedules: any[]): string[] {
   const suffixes = FLOOR_SUFFIX[floor] ?? [];
   return Array.from(new Set(
     schedules
       .filter(s => {
-        const roomName = s.roomId || s.room || "";
-        return suffixes.some(sfx => roomName.endsWith(sfx));
+        const roomName: string = s.roomId || s.room || "";
+        if (!roomName) return false;
+        // 1. Try suffix matching (e.g. "_5B", "-5T")
+        if (suffixes.some(sfx => roomName.endsWith(sfx))) return true;
+        // 2. Fallback: extract floor number from room name directly
+        //    Handles formats like "RT5-5T", "RT5_5B", "RK6-6T", etc.
+        const match = roomName.match(/[-_](\d+)[A-Za-z]?$/);
+        if (match) return match[1] === floor;
+        // 3. Looser fallback: check if room name contains "-{floor}" or "_{floor}"
+        return roomName.includes(`-${floor}`) || roomName.includes(`_${floor}`);
       })
       .map(s => s.roomId || s.room || "")
       .filter(Boolean) // Remove empty strings
@@ -67,24 +97,54 @@ export function getAllRooms(schedules: any[]): string[] {
   )).sort();
 }
 
+// Normalisasi nama ruangan: hapus separator agar fuzzy match bisa bekerja
+// "RT5-5T" == "RT55T" == "rt5_5t"
+function normalizeRoomId(id: string): string {
+  return id.toLowerCase().replace(/[-_\s]/g, "");
+}
+
 export function getScheduleForSlot(
   roomId: string,
   day: string,
   slot: typeof TIME_SLOTS[0],
   schedules: any[]
 ) {
+  const normalizedDay = normalizeDayKey(day);
+  const normRoom = normalizeRoomId(roomId);
+
   return schedules.find(s => {
     const scheduleRoom = s.roomId || s.room || "";
-    const scheduleDay = s.day || "";
+    const scheduleDay  = normalizeDayKey(s.day || "");
     const scheduleStart = s.startTime || s.start || "";
-    const scheduleEnd = s.endTime || s.end || "";
-    
-    return scheduleRoom === roomId && 
-           scheduleDay === day &&
-           toMin(scheduleStart) < toMin(slot.end) && 
-           toMin(scheduleEnd) > toMin(slot.start);
+    const scheduleEnd   = s.endTime   || s.end   || "";
+
+    // Fuzzy room match: exact OR strip-separator match
+    const roomMatch = scheduleRoom === roomId ||
+                      normalizeRoomId(scheduleRoom) === normRoom;
+    if (!roomMatch) return false;
+    if (scheduleDay !== normalizedDay) return false;
+
+    // ── Metode 1: Session number (paling andal untuk data CosmosDB) ──
+    const sStart = Number(s.sessionStart);
+    if (!isNaN(sStart) && sStart > 0 && String(s.sessionStart).trim() !== "") {
+      const sEndNum = Number(s.sessionEnd);
+      if (!isNaN(sEndNum) && sEndNum > 0) {
+        return slot.slot >= sStart && slot.slot <= sEndNum;
+      }
+      if (scheduleEnd) {
+        return slot.slot >= sStart &&
+               toMin(scheduleEnd) > toMin(slot.start);
+      }
+      return slot.slot === sStart;
+    }
+
+    // ── Metode 2: Time range (fallback) ──
+    if (!scheduleStart || !scheduleEnd) return false;
+    return toMin(scheduleStart) < toMin(slot.end) &&
+           toMin(scheduleEnd)   > toMin(slot.start);
   }) ?? null;
 }
+
 
 export function slotInRange(slot: typeof TIME_SLOTS[0], startTime: string, endTime: string): boolean {
   return toMin(startTime) < toMin(slot.end) && toMin(endTime) > toMin(slot.start);
