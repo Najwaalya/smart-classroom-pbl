@@ -17,6 +17,8 @@ export interface BookingRecord {
   bookedBy: string;
   bookedById: string;
   bookedAt: Date;
+  sessionStart?: string;
+  sessionEnd?: string;
 }
 
 export interface BookingOption {

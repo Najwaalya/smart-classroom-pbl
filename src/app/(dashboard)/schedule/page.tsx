@@ -259,10 +259,19 @@ export default function SchedulePage() {
   );
 
   function getBookingForSlot(roomId: string, day: string, slot: typeof TIME_SLOTS[0]): BookingRecord | null {
-    return bookings.find(b =>
-      b.roomId === roomId && b.day === day &&
-      toMin(b.startTime) < toMin(slot.end) && toMin(b.endTime) > toMin(slot.start)
-    ) ?? null;
+    return bookings.find(b => {
+      if (b.roomId !== roomId || b.day !== day) return false;
+
+      // Cek apakah startTime berupa nomor sesi
+      const startNum = Number(b.startTime);
+      const endNum = Number(b.endTime);
+      if (!isNaN(startNum) && !isNaN(endNum) && startNum > 0) {
+        return slot.slot >= startNum && slot.slot <= endNum;
+      }
+
+      // Fallback: format waktu HH:MM
+      return toMin(b.startTime) < toMin(slot.end) && toMin(b.endTime) > toMin(slot.start);
+    }) ?? null;
   }
 
   function isRoomOccupiedBySensor(roomId: string) {
