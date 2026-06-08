@@ -3,6 +3,9 @@
 #include <ArduinoJson.h>
 #include <DHTesp.h>
 #include <PubSubClient.h>
+#include <time.h>
+#include "mbedtls/md.h"
+#include "mbedtls/base64.h"
 
 // =====================================================
 // PIN DEFINITIONS
@@ -17,8 +20,8 @@
 // =====================================================
 // WIFI CONFIGURATION
 // =====================================================
-const char* WIFI_SSID = "Juaa";
-const char* WIFI_PASSWORD = "najwa123";
+const char* WIFI_SSID = "Polinema Hotspot 2";
+const char* WIFI_PASSWORD = "polinemajoss";
 
 // =====================================================
 // AZURE IOT HUB CONFIGURATION
@@ -29,10 +32,20 @@ const int MQTT_PORT = 8883;
 const char* DEVICE_ID = "esp32-smartclass-ti3b";
 
 // =====================================================
-// SAS TOKEN
+// DEVICE PRIMARY KEY
+// Ambil dari Azure Portal -> IoT Hub -> Devices -> Primary key
+// Jangan bagikan key ini ke orang lain.
 // =====================================================
-const char* SAS_TOKEN =
-"SharedAccessSignature sr=iothub-smart-classroom.azure-devices.net%2Fdevices%2Fesp32-smartclass-ti3b&sig=9TEgBKsjEQi0R89gaCQs%2FaKNhmKe5ArAC6uLKeOwIyg%3D&se=1780897842";
+const char* DEVICE_KEY = "OjvC1TTYndLC49k+3AUv6NptBvVMn9rvL+cgAxegUUY=";
+
+// Token berlaku 1 jam
+const long TOKEN_VALID_SECONDS = 3600;
+
+// Token diperbarui 10 menit sebelum expired
+const long TOKEN_REFRESH_BEFORE = 600;
+
+String sasToken = "";
+time_t tokenExpiryTime = 0;
 
 // =====================================================
 // MQTT CLIENT
@@ -92,9 +105,15 @@ const unsigned long mqttReconnectInterval = 5000;
 // =====================================================
 void initializePins();
 void connectWiFi();
+void setupTime();
 void connectMqtt();
 void reconnectMqtt();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
+
+String urlEncode(const String& value);
+String createHmacSha256Signature(const String& stringToSign, const char* deviceKey);
+String generateSasToken();
+void refreshSasTokenIfNeeded();
 
 void readDHT();
 void updateLED();
@@ -116,6 +135,36 @@ void initializePins() {
   digitalWrite(GREEN_PIN, HIGH);
 
   dht.setup(DHT_PIN, DHTesp::DHT11);
+}
+
+// =====================================================
+// SETUP TIME WITH NTP
+// =====================================================
+void setupTime() {
+  Serial.println("[Time] Syncing time with NTP...");
+
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+
+  time_t now = time(nullptr);
+  int attempts = 0;
+
+  while (now < 1000000000 && attempts < 40) {
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+    attempts++;
+  }
+
+  Serial.println();
+
+  if (now < 1000000000) {
+    Serial.println("[Time] Failed to sync time. Restarting...");
+    delay(3000);
+    ESP.restart();
+  }
+
+  Serial.print("[Time] Unix time: ");
+  Serial.println((long)now);
 }
 
 // =====================================================
@@ -157,6 +206,172 @@ void connectWiFi() {
 }
 
 // =====================================================
+// URL ENCODE
+// =====================================================
+String urlEncode(const String& value) {
+  String encoded = "";
+  char c;
+  char code0;
+  char code1;
+
+  for (int i = 0; i < value.length(); i++) {
+    c = value.charAt(i);
+
+    if (
+      isalnum(c) ||
+      c == '-' ||
+      c == '_' ||
+      c == '.' ||
+      c == '~'
+    ) {
+      encoded += c;
+    } else {
+      code1 = (c & 0xF) + '0';
+
+      if ((c & 0xF) > 9) {
+        code1 = (c & 0xF) - 10 + 'A';
+      }
+
+      c = (c >> 4) & 0xF;
+      code0 = c + '0';
+
+      if (c > 9) {
+        code0 = c - 10 + 'A';
+      }
+
+      encoded += '%';
+      encoded += code0;
+      encoded += code1;
+    }
+  }
+
+  return encoded;
+}
+
+// =====================================================
+// CREATE HMAC SHA256 SIGNATURE
+// =====================================================
+String createHmacSha256Signature(const String& stringToSign, const char* deviceKey) {
+  unsigned char decodedKey[64];
+  size_t decodedKeyLength = 0;
+
+  int decodeResult = mbedtls_base64_decode(
+    decodedKey,
+    sizeof(decodedKey),
+    &decodedKeyLength,
+    (const unsigned char*)deviceKey,
+    strlen(deviceKey)
+  );
+
+  if (decodeResult != 0) {
+    Serial.println("[SAS] Failed to decode device key");
+    return "";
+  }
+
+  unsigned char hmacResult[32];
+
+  mbedtls_md_context_t ctx;
+  mbedtls_md_init(&ctx);
+
+  const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+
+  mbedtls_md_setup(&ctx, info, 1);
+  mbedtls_md_hmac_starts(&ctx, decodedKey, decodedKeyLength);
+  mbedtls_md_hmac_update(
+    &ctx,
+    (const unsigned char*)stringToSign.c_str(),
+    stringToSign.length()
+  );
+  mbedtls_md_hmac_finish(&ctx, hmacResult);
+  mbedtls_md_free(&ctx);
+
+  unsigned char base64Signature[128];
+  size_t base64Length = 0;
+
+  int encodeResult = mbedtls_base64_encode(
+    base64Signature,
+    sizeof(base64Signature),
+    &base64Length,
+    hmacResult,
+    sizeof(hmacResult)
+  );
+
+  if (encodeResult != 0) {
+    Serial.println("[SAS] Failed to encode signature");
+    return "";
+  }
+
+  base64Signature[base64Length] = '\0';
+
+  return String((char*)base64Signature);
+}
+
+// =====================================================
+// GENERATE SAS TOKEN
+// =====================================================
+String generateSasToken() {
+  time_t now = time(nullptr);
+
+  tokenExpiryTime = now + TOKEN_VALID_SECONDS;
+
+  String resourceUri =
+    String(MQTT_BROKER) +
+    "/devices/" +
+    String(DEVICE_ID);
+
+  String encodedResourceUri = urlEncode(resourceUri);
+
+  String stringToSign =
+    encodedResourceUri +
+    "\n" +
+    String((long)tokenExpiryTime);
+
+  String signature = createHmacSha256Signature(stringToSign, DEVICE_KEY);
+
+  if (signature == "") {
+    Serial.println("[SAS] Signature generation failed");
+    return "";
+  }
+
+  String token =
+    "SharedAccessSignature sr=" +
+    encodedResourceUri +
+    "&sig=" +
+    urlEncode(signature) +
+    "&se=" +
+    String((long)tokenExpiryTime);
+
+  Serial.println("[SAS] New token generated");
+  Serial.print("[SAS] Expired at Unix time: ");
+  Serial.println((long)tokenExpiryTime);
+
+  return token;
+}
+
+// =====================================================
+// REFRESH SAS TOKEN IF NEEDED
+// =====================================================
+void refreshSasTokenIfNeeded() {
+  time_t now = time(nullptr);
+
+  if (sasToken == "" || now >= tokenExpiryTime - TOKEN_REFRESH_BEFORE) {
+    Serial.println("[SAS] Token empty or almost expired. Refreshing...");
+
+    sasToken = generateSasToken();
+
+    if (sasToken == "") {
+      Serial.println("[SAS] Failed to refresh token");
+      return;
+    }
+
+    if (mqttClient.connected()) {
+      Serial.println("[MQTT] Disconnecting to use new SAS token...");
+      mqttClient.disconnect();
+    }
+  }
+}
+
+// =====================================================
 // MQTT CALLBACK
 // =====================================================
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
@@ -181,7 +396,6 @@ void connectMqtt() {
   Serial.println();
   Serial.println("[Azure] Connecting to Azure IoT Hub...");
 
-  // Untuk testing
   espClient.setInsecure();
 
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
@@ -198,6 +412,8 @@ void connectMqtt() {
   // Client ID HARUS sama dengan Device ID
   String clientId = String(DEVICE_ID);
 
+  refreshSasTokenIfNeeded();
+
   Serial.print("[Azure] Device ID : ");
   Serial.println(DEVICE_ID);
 
@@ -206,7 +422,7 @@ void connectMqtt() {
   bool connected = mqttClient.connect(
     clientId.c_str(),
     username.c_str(),
-    SAS_TOKEN
+    sasToken.c_str()
   );
 
   if (connected) {
@@ -381,6 +597,7 @@ void setup() {
   Serial.println("[System] Pins initialized");
 
   connectWiFi();
+  setupTime();
   connectMqtt();
 
   Serial.println("[System] Setup complete");
@@ -403,6 +620,8 @@ void loop() {
   // =========================================
   // MQTT CHECK
   // =========================================
+  refreshSasTokenIfNeeded();
+
   if (!mqttClient.connected()) {
 
     reconnectMqtt();

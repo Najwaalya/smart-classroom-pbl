@@ -379,11 +379,6 @@ export default function BookingPage() {
     day: string,
     slot: typeof TIME_SLOTS[number]
   ): boolean {
-    console.log("[checkSlotBlocked] bookings:", bookings.map(b => ({
-      roomId: b.roomId, day: b.day, start: b.startTime, end: b.endTime
-    })));
-    console.log("[checkSlotBlocked] checking:", { roomId, day, slot });
-
     const normalizedDay = normalizeDayKey(day);
     const normRoom = normalizeRoomId(roomId);
 

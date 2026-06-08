@@ -8,8 +8,8 @@ import {
   Info, CheckCircle, Plus, Download, Trash2, CalendarDays,
 } from "lucide-react";
 import {
-  DAYS, FLOORS, FLOOR_SUFFIX, TIME_SLOTS, toMin, getRoomsForFloor, getScheduleForSlot,
-  sessionToTime, normalizeDayKey,
+  DAYS, FLOORS, TIME_SLOTS, toMin, getRoomsForFloor, getScheduleForSlot,
+  sessionToTime,
 } from "@/lib/schedule-utils";
 import { ScheduleEntry } from "@/lib/schedule";
 import { BookingRecord } from "@/components/booking/BookingForm";
@@ -128,22 +128,12 @@ export default function SchedulePage() {
         ? sessionToTime(endNum)
         : null;
 
-      const rawRoom = String(c.roomId ?? c.room ?? "");
-      const matchedRoom = rooms.find(r => r.id === rawRoom || r.roomId === rawRoom || r.roomName === rawRoom);
-      const roomName = matchedRoom ? (matchedRoom.roomName ?? matchedRoom.roomId ?? matchedRoom.id) : undefined;
-      const roomIdVal = matchedRoom ? (matchedRoom.roomId ?? matchedRoom.id) : undefined;
-
       return {
-        id:      String(c.id ?? ""),
-        room:    rawRoom,
-        roomName: roomName,
-        roomId:  roomIdVal,
-        day:     normalizeDayKey(String(c.day ?? "")),
-        start:   convertedStart?.startTime ?? String(c.startTime ?? c.start ?? ""),
-        end:     convertedEnd?.endTime     ?? String(c.sessionEnd ?? c.endTime ?? c.end ?? ""),
-        class:   String(c.class ?? c.className ?? ""),
-        subject: String(c.subject ?? ""),
-        lecturer: String(c.lecturer ?? ""),
+        id:    String(c.id ?? ""),
+        room:  String(c.roomId ?? c.room ?? ""),
+        day:   String(c.day ?? ""),
+        start: convertedStart?.startTime ?? String(c.startTime ?? c.start ?? ""),
+        end:   convertedEnd?.endTime     ?? String(c.sessionEnd ?? c.endTime ?? c.end ?? ""),
       };
     });
     setAllSchedules(cosmosEntries);
@@ -224,7 +214,28 @@ export default function SchedulePage() {
         if (!res.ok || !json?.success) {
           throw new Error(json?.message ?? "Gagal menambah jadwal");
         }
-        setSuccessMsg(`Jadwal di ruangan "${payload.roomId}" berhasil ditambahkan.`);
+        setSuccessMsg(`Jadwal di ruangan "${newEntry.roomId}" berhasil ditambahkan.`);
+      }
+
+      // Refresh schedules from backend and close modal only after success
+      const res2 = await fetch("/api/schedules");
+      const json2 = await res2.json();
+      if (json2.success && Array.isArray(json2.schedules)) {
+        const entries: ScheduleEntry[] = json2.schedules.map((c: Record<string, unknown>) => {
+          const startNum = Number(c.sessionStart);
+          const endNum   = Number(c.sessionEnd);
+          const convertedStart = (!isNaN(startNum) && startNum > 0) ? sessionToTime(startNum) : null;
+          const convertedEnd   = (!isNaN(endNum)   && endNum   > 0) ? sessionToTime(endNum)   : null;
+          return {
+            id:    String(c.id ?? ""),
+            room:  String(c.roomId ?? c.room ?? ""),
+            day:   String(c.day ?? ""),
+            start: convertedStart?.startTime ?? String(c.startTime ?? c.start ?? ""),
+            end:   convertedEnd?.endTime     ?? String(c.sessionEnd ?? c.endTime ?? c.end ?? ""),
+          };
+        });
+        setAllSchedules(entries);
+        setSchedules(entries);
       }
 
       await mutateSchedules();
@@ -470,7 +481,25 @@ export default function SchedulePage() {
             onRequestDelete={(entry) => setDeleteConfirm({ entry })}
             onDeleted={async () => {
               try {
-                await mutateSchedules();
+                const res = await fetch("/api/schedules");
+                const json = await res.json();
+                if (json.success && Array.isArray(json.schedules)) {
+                  const entries: ScheduleEntry[] = json.schedules.map((c: Record<string, unknown>) => {
+                    const startNum = Number(c.sessionStart);
+                    const endNum   = Number(c.sessionEnd);
+                    const convertedStart = (!isNaN(startNum) && startNum > 0) ? sessionToTime(startNum) : null;
+                    const convertedEnd   = (!isNaN(endNum)   && endNum   > 0) ? sessionToTime(endNum)   : null;
+                    return {
+                      id:    String(c.id ?? ""),
+                      room:  String(c.roomId ?? c.room ?? ""),
+                      day:   String(c.day ?? ""),
+                      start: convertedStart?.startTime ?? String(c.startTime ?? c.start ?? ""),
+                      end:   convertedEnd?.endTime     ?? String(c.sessionEnd ?? c.endTime ?? c.end ?? ""),
+                    };
+                  });
+                  setAllSchedules(entries);
+                  setSchedules(entries);
+                }
               } catch (err) {
                 console.error("Gagal refresh jadwal setelah hapus:", err);
               }
