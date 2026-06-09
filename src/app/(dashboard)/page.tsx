@@ -1,6 +1,8 @@
 "use client";
+"use no memo";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import useSWR from "swr";
 import { Search, Activity, Wind, ShieldAlert, CalendarDays, Bookmark, Loader2 } from "lucide-react";
 import { useRoomData } from "@/contexts/RoomDataContext";
 
@@ -9,10 +11,84 @@ import MetricCard from "@/components/dashboard/MetricCard";
 import SearchFilter from "@/components/dashboard/SearchFilter";
 import RoomCard from "@/components/dashboard/RoomCard";
 
+import { getScheduleStatus, RoomSensorData, BookingData } from "@/lib/schedule-status";
+import { ScheduleEntry } from "@/lib/schedule";
+import { sessionToTime } from "@/lib/schedule-utils";
+
+const fetcher = (url: string) => fetch(url).then(r => r.json());
+
 export default function Dashboard() {
   const { rooms, isLoading, error } = useRoomData();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "scheduled" | "uncertain" | "empty" | "booked">("all");
+  
+  // State untuk trigger re-render setiap menit agar perbandingan jam tetap update
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60000); // Update tiap 1 menit
+    return () => clearInterval(timer);
+  }, []);
+
+  // Fetch data schedules & bookings via SWR
+  const { data: scheduleData } = useSWR("/api/schedules", fetcher, { refreshInterval: 30000 });
+  const { data: bookingData } = useSWR("/api/bookings", fetcher, { refreshInterval: 30000 });
+
+  // Map Schedules
+  const schedules: ScheduleEntry[] = useMemo(() => {
+    if (!scheduleData?.success || !Array.isArray(scheduleData.schedules)) return [];
+    return scheduleData.schedules.map((c: any) => {
+      const startNum = Number(c.sessionStart);
+      const endNum = Number(c.sessionEnd);
+      const convertedStart = (!isNaN(startNum) && startNum > 0) ? sessionToTime(startNum) : null;
+      const convertedEnd = (!isNaN(endNum) && endNum > 0) ? sessionToTime(endNum) : null;
+      return {
+        id: String(c.id ?? ""),
+        room: String(c.roomId ?? c.room ?? ""),
+        class: String(c.className ?? c.class ?? c.subject ?? ""),
+        day: String(c.day ?? ""),
+        start: convertedStart?.startTime ?? String(c.startTime ?? c.start ?? ""),
+        end: convertedEnd?.endTime ?? String(c.sessionEnd ?? c.endTime ?? c.end ?? ""),
+      };
+    });
+  }, [scheduleData]);
+
+  // Map Bookings
+  const bookings: BookingData[] = useMemo(() => {
+    if (!bookingData?.success || !Array.isArray(bookingData.bookings)) return [];
+    return bookingData.bookings.map((b: any) => ({
+      roomId: String(b.roomId ?? ""),
+      day: String(b.day ?? ""),
+      startTime: String(b.startTime ?? b.sessionStart ?? ""),
+      endTime: String(b.endTime ?? b.sessionEnd ?? ""),
+      status: String(b.status ?? "active"),
+    })).filter((b: any) => b.status === "active");
+  }, [bookingData]);
+
+  // Calculate Dynamic Status based on time
+  const dynamicallyEvaluatedRooms = useMemo(() => {
+    // Kita panggil currentTime di dalam useMemo agar dia trigger evaluasi ulang
+    const _now = currentTime; 
+
+    return rooms.map(room => {
+      const sensorData: RoomSensorData = {
+        students: room.students || 0,
+        pirActivity: room.pirSensor?.status === "active" || (room.pir && room.pir.length > 0 && room.pir[room.pir.length - 1] > 10),
+        lastMotionMinutes: room.status === "active" ? 2 : room.status === "uncertain" ? 25 : 60,
+      };
+
+      // Evaluasi status asli secara dinamis (memperhitungkan waktu sekarang via schedule-status.ts)
+      const dynamicStatus = getScheduleStatus(room.id, sensorData, bookings, schedules);
+
+      return {
+        ...room,
+        // Override status bawaan cosmos dengan status dinamis
+        dynamicStatus: dynamicStatus.status,
+      };
+    });
+  }, [rooms, schedules, bookings, currentTime]);
 
   const {
     activeCount,
@@ -25,8 +101,8 @@ export default function Dashboard() {
     const normalizedStatus = (status: unknown) =>
       String(status ?? "").toUpperCase();
 
-    const filtered = rooms.filter((r) => {
-      const roomStatus = normalizedStatus(r.status);
+    const filtered = dynamicallyEvaluatedRooms.filter((r) => {
+      const roomStatus = normalizedStatus(r.dynamicStatus); // Menggunakan dynamic status
       const matchSearch =
         (r.name ?? r.id).toLowerCase().includes(search.toLowerCase()) ||
         (r.wing || "").toLowerCase().includes(search.toLowerCase());
@@ -34,21 +110,21 @@ export default function Dashboard() {
         filter === "all" ||
         (filter === "active" && roomStatus === "ACTIVE") ||
         (filter === "scheduled" && roomStatus === "SCHEDULED") ||
-        (filter === "uncertain" && roomStatus === "UNCERTAINED") ||
+        (filter === "uncertain" && (roomStatus === "UNCERTAINED" || roomStatus === "UNCERTAIN")) ||
         (filter === "empty" && roomStatus === "EMPTY") ||
         (filter === "booked" && roomStatus === "BOOKED");
       return matchSearch && matchFilter;
     });
 
     return {
-      activeCount: rooms.filter((r) => normalizedStatus(r.status) === "ACTIVE").length,
-      scheduledCount: rooms.filter((r) => normalizedStatus(r.status) === "SCHEDULED").length,
-      uncertainCount: rooms.filter((r) => normalizedStatus(r.status) === "UNCERTAINED").length,
-      emptyCount: rooms.filter((r) => normalizedStatus(r.status) === "EMPTY").length,
-      bookedCount: rooms.filter((r) => normalizedStatus(r.status) === "BOOKED").length,
+      activeCount: dynamicallyEvaluatedRooms.filter((r) => normalizedStatus(r.dynamicStatus) === "ACTIVE").length,
+      scheduledCount: dynamicallyEvaluatedRooms.filter((r) => normalizedStatus(r.dynamicStatus) === "SCHEDULED").length,
+      uncertainCount: dynamicallyEvaluatedRooms.filter((r) => normalizedStatus(r.dynamicStatus) === "UNCERTAINED" || normalizedStatus(r.dynamicStatus) === "UNCERTAIN").length,
+      emptyCount: dynamicallyEvaluatedRooms.filter((r) => normalizedStatus(r.dynamicStatus) === "EMPTY").length,
+      bookedCount: dynamicallyEvaluatedRooms.filter((r) => normalizedStatus(r.dynamicStatus) === "BOOKED").length,
       filteredRooms: filtered,
     };
-  }, [rooms, search, filter]);
+  }, [dynamicallyEvaluatedRooms, search, filter]);
 
   return (
     <div className="page-wrapper">
@@ -139,7 +215,7 @@ export default function Dashboard() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredRooms.map((room) => (
-                  <RoomCard key={room.id} room={room} />
+                  <RoomCard key={room.id} room={{ ...room, status: room.dynamicStatus as any }} />
                 ))}
               </div>
             )}

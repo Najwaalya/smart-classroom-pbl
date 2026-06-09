@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect } from "react";
 import {
   Plus, CheckCircle2, AlertTriangle, CalendarCheck, Clock,
 } from "lucide-react";
-import { TIME_SLOTS, DAYS, toMin, getDayLabel } from "@/lib/schedule-utils";
+import { TIME_SLOTS, DAYS, toMin, getDayLabel, FLOORS } from "@/lib/schedule-utils";
 import { getUserInfo } from "@/lib/auth";
 
 export interface BookingRecord {
@@ -28,6 +28,7 @@ export interface BookingOption {
 
 export interface BookingFormProps {
   selectedFloor: string;
+  onFloorChange: (floor: string) => void;
   selectedDay: string;
   onDayChange: (day: string) => void;
   roomsForFloor: BookingOption[];
@@ -37,6 +38,7 @@ export interface BookingFormProps {
 
 export function BookingForm({
   selectedFloor,
+  onFloorChange,
   selectedDay,
   onDayChange,
   roomsForFloor,
@@ -55,6 +57,8 @@ export function BookingForm({
   useEffect(() => {
     if (roomsForFloor.length > 0) {
       setRoomId(roomsForFloor[0].id);
+    } else {
+      setRoomId("");
     }
   }, [roomsForFloor]);
 
@@ -160,6 +164,27 @@ export function BookingForm({
         <div>
           <p className="text-sm font-black text-slate-800">Form Booking Ruangan</p>
           <p className="text-[10px] text-slate-400 font-medium">Pilih ruangan & slot waktu kosong untuk booking</p>
+        </div>
+      </div>
+
+      {/* Pilih Lantai */}
+      <div>
+        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Lantai</label>
+        <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-200 gap-1">
+          {FLOORS.map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => onFloorChange(f)}
+              className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${
+                selectedFloor === f
+                  ? "bg-[var(--color-primary)] text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-white"
+              }`}
+            >
+              Lt. {f}
+            </button>
+          ))}
         </div>
       </div>
 

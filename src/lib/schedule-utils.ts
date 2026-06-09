@@ -168,7 +168,7 @@ export function checkConflict(
     const scheduleEnd = s.endTime || s.end || "";
     
     return scheduleRoom === roomId && 
-           scheduleDay === day &&
+           normalizeDayKey(scheduleDay) === normalizeDayKey(day) &&
            toMin(startTime) < toMin(scheduleEnd) && 
            toMin(endTime) > toMin(scheduleStart);
   });

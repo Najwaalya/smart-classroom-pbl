@@ -296,7 +296,20 @@ export default function BookingPage() {
   }
 
   const roomsOnFloor = useMemo(() => {
-    // ── Prioritas 1: Ambil ruangan dari data jadwal (roomId pasti konsisten) ──
+    // ── Prioritas 1: Dari /api/rooms filtered by floor ──
+    if (roomOptions.length > 0) {
+      const sameFloorRooms = roomOptions
+        .filter((room) => String(room.floor) === selectedFloor)
+        .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
+      if (sameFloorRooms.length > 0) {
+        return sameFloorRooms.map((room) => ({
+          id: room.id,
+          label: room.name ?? room.id,
+        }));
+      }
+    }
+
+    // ── Prioritas 2: Ambil ruangan dari data jadwal (roomId pasti konsisten) sebagai fallback ──
     if (schedules.length > 0) {
       const fromSchedules = getRoomsForFloor(selectedFloor, schedules);
       if (fromSchedules.length > 0) {
@@ -308,19 +321,6 @@ export default function BookingPage() {
           );
           return { id, label: match?.name ?? id };
         });
-      }
-    }
-
-    // ── Prioritas 2: Dari /api/rooms filtered by floor ──
-    if (roomOptions.length > 0) {
-      const sameFloorRooms = roomOptions
-        .filter((room) => String(room.floor) === selectedFloor)
-        .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
-      if (sameFloorRooms.length > 0) {
-        return sameFloorRooms.map((room) => ({
-          id: room.id,
-          label: room.name ?? room.id,
-        }));
       }
     }
 
@@ -948,6 +948,9 @@ export default function BookingPage() {
           key={bookings.length}
           selectedFloor={
             selectedFloor
+          }
+          onFloorChange={
+            setSelectedFloor
           }
           selectedDay={
             selectedDay
