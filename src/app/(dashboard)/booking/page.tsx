@@ -199,7 +199,14 @@ export default function BookingPage() {
 
   const bookings = useMemo(() => {
     if (!bookingsData || !bookingsData.success) return [];
-    return Array.isArray(bookingsData.bookings) ? bookingsData.bookings : [];
+    const rawBookings = Array.isArray(bookingsData.bookings) ? bookingsData.bookings : [];
+    return rawBookings.map((b: any) => ({
+      ...b,
+      startTime: String(b.startTime ?? b.sessionStart ?? ""),
+      endTime: String(b.endTime ?? b.sessionEnd ?? ""),
+      sessionStart: b.sessionStart,
+      sessionEnd: b.sessionEnd,
+    })) as BookingRecord[];
   }, [bookingsData]);
 
   // =========================================
@@ -289,7 +296,20 @@ export default function BookingPage() {
   }
 
   const roomsOnFloor = useMemo(() => {
-    // ── Prioritas 1: Ambil ruangan dari data jadwal (roomId pasti konsisten) ──
+    // ── Prioritas 1: Dari /api/rooms filtered by floor ──
+    if (roomOptions.length > 0) {
+      const sameFloorRooms = roomOptions
+        .filter((room) => String(room.floor) === selectedFloor)
+        .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
+      if (sameFloorRooms.length > 0) {
+        return sameFloorRooms.map((room) => ({
+          id: room.id,
+          label: room.name ?? room.id,
+        }));
+      }
+    }
+
+    // ── Prioritas 2: Ambil ruangan dari data jadwal (roomId pasti konsisten) sebagai fallback ──
     if (schedules.length > 0) {
       const fromSchedules = getRoomsForFloor(selectedFloor, schedules);
       if (fromSchedules.length > 0) {
@@ -301,19 +321,6 @@ export default function BookingPage() {
           );
           return { id, label: match?.name ?? id };
         });
-      }
-    }
-
-    // ── Prioritas 2: Dari /api/rooms filtered by floor ──
-    if (roomOptions.length > 0) {
-      const sameFloorRooms = roomOptions
-        .filter((room) => String(room.floor) === selectedFloor)
-        .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
-      if (sameFloorRooms.length > 0) {
-        return sameFloorRooms.map((room) => ({
-          id: room.id,
-          label: room.name ?? room.id,
-        }));
       }
     }
 
@@ -339,15 +346,28 @@ export default function BookingPage() {
     slot: typeof TIME_SLOTS[number]
   ): BookingRecord | null {
     const normalizedDay = normalizeDayKey(day);
-    return (
-      bookings.find(
-        (b) =>
-          b.roomId === roomId &&
-          normalizeDayKey(b.day) === normalizedDay &&
-          toMin(b.startTime) < toMin(slot.end) &&
-          toMin(b.endTime)   > toMin(slot.start)
-      ) ?? null
-    );
+    return bookings.find(b => {
+      if (normalizeRoomId(b.roomId) !== normalizeRoomId(roomId)) return false;
+      if (normalizeDayKey(b.day) !== normalizedDay) return false;
+
+      const startRaw = String(b.startTime ?? (b as any).sessionStart ?? "");
+      const endRaw = String(b.endTime ?? (b as any).sessionEnd ?? "");
+
+      // Jika kosong, skip
+      if (!startRaw || !endRaw) return false;
+
+      // Cek apakah berupa nomor sesi
+      const startNum = Number(startRaw);
+      const endNum = Number(endRaw);
+      if (!isNaN(startNum) && startNum > 0 && !startRaw.includes(":")) {
+        return slot.slot >= startNum && slot.slot <= endNum;
+      }
+
+      // Fallback: format waktu HH:MM
+      if (!startRaw.includes(":") || !endRaw.includes(":")) return false;
+      return toMin(startRaw) < toMin(slot.end) &&
+             toMin(endRaw) > toMin(slot.start);
+    }) ?? null;
   }
 
   // =========================================
@@ -523,6 +543,10 @@ export default function BookingPage() {
           ) {
             continue;
           }
+
+          // Skip jika startTime bukan format HH:MM
+          if (!b.startTime || !b.startTime.includes(":")) continue;
+          if (!b.endTime || !b.endTime.includes(":")) continue;
 
           const bookingStartMin =
             toMin(
@@ -924,6 +948,9 @@ export default function BookingPage() {
           key={bookings.length}
           selectedFloor={
             selectedFloor
+          }
+          onFloorChange={
+            setSelectedFloor
           }
           selectedDay={
             selectedDay

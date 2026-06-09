@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { Plus, Edit2, Trash2 } from "lucide-react";
-import { TIME_SLOTS, DAYS, toMin } from "@/lib/schedule-utils";
+import { TIME_SLOTS, DAYS, toMin, normalizeDayKey } from "@/lib/schedule-utils";
 import { ScheduleEntry } from "@/lib/schedule";
 
 // unused helper kept for potential future use
@@ -53,7 +53,7 @@ export function Timetable({
    */
   const rows = useMemo(() => {
     return DAYS.map(day => {
-      const dayEntries = filtered.filter(s => s.day === day.key);
+      const dayEntries = filtered.filter(s => normalizeDayKey(s.day) === day.key);
 
       // ── Sort by start time ─────────────────────────────────────────────────
       const sorted = [...dayEntries].sort((a, b) => toMin(a.start) - toMin(b.start));
@@ -207,13 +207,8 @@ export function Timetable({
                         className="border border-slate-200 p-0 align-middle h-16"
                       >
                         <div className={`h-full mx-0.5 my-0.5 rounded-lg border ${colorClass} flex items-center justify-center relative group/cell overflow-hidden`}>
-                          {/* Class name first, fallback to room */}
                           <span className="text-[11px] font-black text-center px-1 leading-tight">
-                            {(entry.class && entry.class !== "")
-                              ? entry.class
-                              : (entry.subject && entry.subject !== "")
-                                ? entry.subject
-                                : (entry.roomName ?? entry.roomId ?? entry.room)}
+                            {entry.class || entry.subject || "Terisi"}
                           </span>
 
                           {/* CRUD buttons on hover */}

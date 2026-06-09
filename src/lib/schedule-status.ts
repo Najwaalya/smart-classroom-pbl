@@ -12,7 +12,8 @@
  * 7. Tidak ada jadwal + sudah dibooking = Booked
  */
 
-import { schedules } from "./schedule";
+import { ScheduleEntry } from "./schedule";
+import { normalizeDayKey } from "./schedule-utils";
 
 export type ScheduleStatus = "active" | "scheduled" | "uncertain" | "empty" | "booked";
 
@@ -40,15 +41,15 @@ export interface ScheduleStatusResult {
 /**
  * Cek apakah ada jadwal pada waktu tertentu
  */
-function hasScheduleNow(roomId: string): { hasSchedule: boolean; minutesSinceStart: number } {
+function hasScheduleNow(roomId: string, schedules: ScheduleEntry[]): { hasSchedule: boolean; minutesSinceStart: number } {
   const now = new Date();
   const currentDay = now.toLocaleDateString("en-US", { weekday: "long" });
   const currentTime = now.toTimeString().slice(0, 5);
 
   const schedule = schedules.find(
     (s) =>
-      s.room === roomId &&
-      s.day === currentDay &&
+      (s.room === roomId || s.roomId === roomId) &&
+      normalizeDayKey(s.day) === currentDay &&
       currentTime >= s.start &&
       currentTime <= s.end
   );
@@ -79,7 +80,7 @@ function hasBookingNow(roomId: string, bookings: BookingData[]): boolean {
   const booking = bookings.find(
     (b) =>
       b.roomId === roomId &&
-      b.day === currentDay &&
+      normalizeDayKey(b.day) === currentDay &&
       currentTime >= b.startTime &&
       currentTime <= b.endTime
   );
@@ -93,9 +94,10 @@ function hasBookingNow(roomId: string, bookings: BookingData[]): boolean {
 export function getScheduleStatus(
   roomId: string,
   sensorData: RoomSensorData,
-  bookings: BookingData[] = []
+  bookings: BookingData[] = [],
+  schedules: ScheduleEntry[] = []
 ): ScheduleStatusResult {
-  const { hasSchedule, minutesSinceStart } = hasScheduleNow(roomId);
+  const { hasSchedule, minutesSinceStart } = hasScheduleNow(roomId, schedules);
   const hasBooking = hasBookingNow(roomId, bookings);
   const { students, pirActivity, lastMotionMinutes } = sensorData;
 
@@ -225,7 +227,7 @@ export function getStatusBadgeProps(status: ScheduleStatus) {
 /**
  * Cek apakah jadwal sudah otomatis kosong (untuk notifikasi)
  */
-export function isScheduleAutoCancelled(roomId: string): boolean {
-  const { hasSchedule, minutesSinceStart } = hasScheduleNow(roomId);
+export function isScheduleAutoCancelled(roomId: string, schedules: ScheduleEntry[] = []): boolean {
+  const { hasSchedule, minutesSinceStart } = hasScheduleNow(roomId, schedules);
   return hasSchedule && minutesSinceStart > 50;
 }

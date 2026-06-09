@@ -20,8 +20,8 @@
 // =====================================================
 // WIFI CONFIGURATION
 // =====================================================
-const char* WIFI_SSID = "Polinema Hotspot 2";
-const char* WIFI_PASSWORD = "polinemajoss";
+const char* WIFI_SSID = "JTI-POLINEMA-2G";
+const char* WIFI_PASSWORD = "jtifast!";
 
 // =====================================================
 // AZURE IOT HUB CONFIGURATION

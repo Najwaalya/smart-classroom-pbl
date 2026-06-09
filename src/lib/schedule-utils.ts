@@ -45,7 +45,9 @@ export const PURPOSES = [
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 export function toMin(t: string): number {
+  if (!t || !t.includes(":")) return 0; // guard tambahan
   const [h, m] = t.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return 0;
   return h * 60 + m;
 }
 
@@ -166,7 +168,7 @@ export function checkConflict(
     const scheduleEnd = s.endTime || s.end || "";
     
     return scheduleRoom === roomId && 
-           scheduleDay === day &&
+           normalizeDayKey(scheduleDay) === normalizeDayKey(day) &&
            toMin(startTime) < toMin(scheduleEnd) && 
            toMin(endTime) > toMin(scheduleStart);
   });
