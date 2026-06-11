@@ -8,6 +8,7 @@ import {
   X,
   CalendarDays,
   BookOpen,
+  History,
 } from "lucide-react";
 import { getRole } from "@/lib/auth";
 import { useState, useEffect } from "react";
@@ -32,7 +33,7 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
   const navItems = [
     {
       name: "Dashboard",
-      href: "/",
+      href: "/dashboard",
       icon: LayoutDashboard,
     },
     {
@@ -59,6 +60,11 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
             name: "Analitik",
             href: "/analytics",
             icon: LineChart,
+          },
+          {
+            name: "Riwayat Booking",
+            href: "/booking-history",
+            icon: History,
           },
         ]
       : []),
@@ -107,8 +113,8 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
           <nav className="flex flex-col gap-1">
             {navItems.map((item) => {
               const isActive =
-                item.href === "/"
-                  ? pathname === "/"
+                item.href === "/dashboard"
+                  ? pathname === "/dashboard"
                   : pathname.startsWith(item.href);
 
               const Icon = item.icon;

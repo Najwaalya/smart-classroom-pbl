@@ -287,7 +287,7 @@ export default function RoomDetail({ params }: { params: Promise<{ id: string }>
           {/* Label */}
           <div className="flex items-center gap-2 text-xs font-black text-slate-500 uppercase tracking-widest">
             <Thermometer size={14} className="text-blue-500" />
-            Sensor DHT-22 Climate System
+            Sensor DHT-11 Climate System
           </div>
 
           <div className="grid grid-cols-2 gap-4 flex-1">
