@@ -4,7 +4,7 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // List of public paths that don't require authentication
-  const publicPaths = ["/login", "/register"];
+  const publicPaths = ["/", "/login", "/register"];
   const excludePaths = [
     ...publicPaths,
     "/api", // All API routes

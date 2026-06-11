@@ -61,7 +61,7 @@ export default function Login() {
     }
 
     // LOGIN BERHASIL
-    router.push("/");
+    router.push("/dashboard");
   }
 
   return (

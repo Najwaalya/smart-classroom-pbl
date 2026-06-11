@@ -20,8 +20,8 @@
 // =====================================================
 // WIFI CONFIGURATION
 // =====================================================
-const char* WIFI_SSID = "JTI-POLINEMA-2G";
-const char* WIFI_PASSWORD = "jtifast!";
+const char* WIFI_SSID = "Keisya";
+const char* WIFI_PASSWORD = "charlotteninaz";
 
 // =====================================================
 // AZURE IOT HUB CONFIGURATION
@@ -33,8 +33,6 @@ const char* DEVICE_ID = "esp32-smartclass-ti3b";
 
 // =====================================================
 // DEVICE PRIMARY KEY
-// Ambil dari Azure Portal -> IoT Hub -> Devices -> Primary key
-// Jangan bagikan key ini ke orang lain.
 // =====================================================
 const char* DEVICE_KEY = "OjvC1TTYndLC49k+3AUv6NptBvVMn9rvL+cgAxegUUY=";
 

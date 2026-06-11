@@ -3,7 +3,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import useSWR from "swr";
-import { Search, Activity, Wind, ShieldAlert, CalendarDays, Bookmark, Loader2 } from "lucide-react";
+import { Search, Activity, Wind, ShieldAlert, CalendarDays, Loader2 } from "lucide-react";
 import { useRoomData } from "@/contexts/RoomDataContext";
 
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
@@ -95,7 +95,6 @@ export default function Dashboard() {
     scheduledCount,
     uncertainCount,
     emptyCount,
-    bookedCount,
     filteredRooms,
   } = useMemo(() => {
     const normalizedStatus = (status: unknown) =>
@@ -121,7 +120,6 @@ export default function Dashboard() {
       scheduledCount: dynamicallyEvaluatedRooms.filter((r) => normalizedStatus(r.dynamicStatus) === "SCHEDULED").length,
       uncertainCount: dynamicallyEvaluatedRooms.filter((r) => normalizedStatus(r.dynamicStatus) === "UNCERTAINED" || normalizedStatus(r.dynamicStatus) === "UNCERTAIN").length,
       emptyCount: dynamicallyEvaluatedRooms.filter((r) => normalizedStatus(r.dynamicStatus) === "EMPTY").length,
-      bookedCount: dynamicallyEvaluatedRooms.filter((r) => normalizedStatus(r.dynamicStatus) === "BOOKED").length,
       filteredRooms: filtered,
     };
   }, [dynamicallyEvaluatedRooms, search, filter]);
@@ -140,7 +138,7 @@ export default function Dashboard() {
         ) : (
           <>
             {/* METRICS */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <MetricCard
                 title="ACTIVE CLASS"
                 value={activeCount}
@@ -177,14 +175,6 @@ export default function Dashboard() {
                 badgeColor="bg-slate-100 text-slate-600"
               />
 
-              <MetricCard
-                title="BOOKED CLASS"
-                value={bookedCount}
-                icon={<Bookmark size={20} />}
-                badge="BOOKED"
-                borderColor="border-l-violet-500"
-                badgeColor="bg-violet-50 text-violet-700"
-              />
             </div>
 
             {/* SEARCH */}
