@@ -1,167 +1,470 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Bot, X, Send, Sparkles, ChevronDown } from "lucide-react";
 
-type ChatMessage = {
-  role: "user" | "assistant";
+// ─── Tipe Data ────────────────────────────────────────────────────────────────
+
+type MessageRole = "user" | "assistant";
+
+interface ChatMessage {
+  role: MessageRole;
   text: string;
+  // Timestamp ditambahkan agar tiap bubble bisa menampilkan jam pengiriman
+  timestamp: Date;
+}
+
+// ─── Konstanta ────────────────────────────────────────────────────────────────
+
+/** Pesan sambutan awal dari asisten saat widget pertama dibuka */
+const INITIAL_MESSAGE: ChatMessage = {
+  role: "assistant",
+  text: "Halo! 👋 Saya **Asisten AI ClassTrack**.\n\nSaya siap bantu kamu soal ruangan, jadwal kelas, status sensor IoT, atau panduan booking. Kamu bisa langsung ketik pertanyaan, atau pilih contoh pertanyaan di bawah ini ya!",
+  timestamp: new Date(),
 };
 
-const initialMessages: ChatMessage[] = [
-  {
-    role: "assistant",
-    text: "Halo! Saya Asisten AI ClassTrack. Saya dapat membantu Anda dengan pertanyaan tentang ruangan, jadwal, sensor, atau penggunaan website. Jika Anda tidak paham cara menggunakan aplikasi, cukup tuliskan masalahnya dan saya akan bantu langkah demi langkah.",
-  },
-];
-
-const suggestedPrompts = [
+/**
+ * Quick-reply pills yang tampil di area atas chat.
+ * Setiap item langsung mengirim pesan ketika diklik —
+ * tidak hanya mengisi input, tapi langsung dispatch ke AI.
+ */
+const QUICK_REPLIES = [
   "Ruangan kosong mana sekarang?",
   "Bagaimana cara mencari jadwal kelas?",
   "Apa arti status sensor PIR/IR/DHT?",
   "Saya bingung cara booking ruangan.",
-];
+] as const;
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+
+/** Format jam HH:MM dari objek Date */
+function formatTime(date: Date): string {
+  return date.toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+/**
+ * Render teks pesan: ubah \n menjadi <br/> dan **bold** jadi <strong>.
+ * Ini cara simpel agar AI bisa pakai line break & bold tanpa library markdown penuh.
+ */
+function renderText(text: string) {
+  // Split per baris dulu, lalu proses inline bold
+  const lines = text.split("\n");
+  return lines.map((line, lineIdx) => {
+    // Proses **bold** di tiap baris
+    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+    const rendered = parts.map((part, partIdx) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <strong key={partIdx} className="font-black">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      return <span key={partIdx}>{part}</span>;
+    });
+    return (
+      <span key={lineIdx}>
+        {rendered}
+        {/* Tambahkan <br/> di antara baris, kecuali baris terakhir */}
+        {lineIdx < lines.length - 1 && <br />}
+      </span>
+    );
+  });
+}
+
+// ─── Sub-komponen: Typing Indicator ──────────────────────────────────────────
+
+/**
+ * Animasi tiga titik yang muncul saat AI sedang "mengetik".
+ * Pakai CSS animation staggered biar terlihat natural.
+ */
+function TypingIndicator() {
+  return (
+    <div className="flex items-end gap-3 mb-3">
+      {/* Avatar AI */}
+      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[var(--color-primary)] to-[#3b5fd4] flex items-center justify-center shrink-0 shadow-sm">
+        <Bot size={14} className="text-white" />
+      </div>
+      {/* Bubble titik-titik */}
+      <div className="bg-slate-100 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1.5">
+        <span
+          className="w-2 h-2 rounded-full bg-slate-400"
+          style={{ animation: "assistantDot 1.2s ease-in-out infinite 0ms" }}
+        />
+        <span
+          className="w-2 h-2 rounded-full bg-slate-400"
+          style={{ animation: "assistantDot 1.2s ease-in-out infinite 200ms" }}
+        />
+        <span
+          className="w-2 h-2 rounded-full bg-slate-400"
+          style={{ animation: "assistantDot 1.2s ease-in-out infinite 400ms" }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Sub-komponen: Message Bubble ─────────────────────────────────────────────
+
+interface MessageBubbleProps {
+  message: ChatMessage;
+}
+
+/**
+ * Satu bubble percakapan. User di kanan (biru gelap), AI di kiri (abu).
+ * Masing-masing punya timestamp dan avatar.
+ */
+function MessageBubble({ message }: MessageBubbleProps) {
+  const isUser = message.role === "user";
+
+  if (isUser) {
+    return (
+      // Wrapper dianimasikan slide-in dari kanan
+      <div
+        className="flex items-end justify-end gap-2 mb-3"
+        style={{ animation: "assistantSlideRight 0.25s ease-out forwards" }}
+      >
+        <div className="flex flex-col items-end gap-1 max-w-[80%]">
+          <div className="bg-[var(--color-primary)] text-white rounded-2xl rounded-br-sm px-4 py-2.5 text-sm leading-relaxed shadow-sm">
+            {renderText(message.text)}
+          </div>
+          {/* Timestamp di bawah bubble */}
+          <span className="text-[10px] text-slate-400 pr-1">
+            {formatTime(message.timestamp)}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // Bubble AI — slide dari kiri
+  return (
+    <div
+      className="flex items-end gap-2 mb-3"
+      style={{ animation: "assistantSlideLeft 0.25s ease-out forwards" }}
+    >
+      {/* Avatar AI kecil */}
+      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[var(--color-primary)] to-[#3b5fd4] flex items-center justify-center shrink-0 shadow-sm mb-5">
+        <Bot size={14} className="text-white" />
+      </div>
+      <div className="flex flex-col items-start gap-1 max-w-[85%]">
+        <div className="bg-slate-100 text-slate-800 rounded-2xl rounded-bl-sm px-4 py-2.5 text-sm leading-relaxed shadow-sm">
+          {renderText(message.text)}
+        </div>
+        {/* Timestamp di bawah bubble */}
+        <span className="text-[10px] text-slate-400 pl-1">
+          {formatTime(message.timestamp)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Komponen Utama: AssistantWidget ─────────────────────────────────────────
 
 export default function AssistantWidget() {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
-  const [query, setQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
+  const [inputValue, setInputValue] = useState("");
+  const [isTyping, setIsTyping] = useState(false); // Kontrol animasi "AI sedang mengetik"
+  const [unreadCount, setUnreadCount] = useState(0); // Badge notif saat widget tutup
 
+  const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null); // Anchor untuk auto-scroll
+
+  // Auto-focus input setiap kali widget dibuka
   useEffect(() => {
-    if (isOpen) inputRef.current?.focus();
+    if (isOpen) {
+      inputRef.current?.focus();
+      setUnreadCount(0); // Reset badge saat dibuka
+    }
   }, [isOpen]);
 
-  async function sendMessage() {
-    const trimmed = query.trim();
-    if (!trimmed) return;
+  // Auto-scroll ke pesan terbaru setiap kali messages berubah atau typing indicator muncul
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isTyping]);
 
-    const nextMessages: ChatMessage[] = [...messages, { role: "user", text: trimmed }];
-    setMessages(nextMessages);
-    setQuery("");
-    setIsLoading(true);
-    setError(null);
+  /**
+   * Fungsi utama pengiriman pesan.
+   * Menerima teks opsional — kalau ada, pakai itu; kalau tidak, pakai nilai input.
+   * Ini yang bikin quick-reply bisa langsung kirim tanpa ketik manual.
+   */
+  const sendMessage = useCallback(
+    async (overrideText?: string) => {
+      const textToSend = (overrideText ?? inputValue).trim();
+      if (!textToSend || isTyping) return;
 
-    try {
-      const res = await fetch("/api/assistant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: trimmed }),
-      });
-      const json = await res.json();
+      // Tambahkan pesan user ke list percakapan
+      const userMessage: ChatMessage = {
+        role: "user",
+        text: textToSend,
+        timestamp: new Date(),
+      };
 
-      const answer =
-        typeof json.answer === "string"
-          ? json.answer
-          : "Maaf, saya tidak dapat menjawab saat ini. Coba ulangi lagi dengan pertanyaan berbeda.";
+      const updatedMessages = [...messages, userMessage];
+      setMessages(updatedMessages);
+      setInputValue(""); // Kosongkan input setelah kirim
+      setIsTyping(true); // Tampilkan typing indicator
 
-      setMessages((prev) => [...prev, { role: "assistant", text: answer }]);
-    } catch (err) {
-      console.error("Assistant error:", err);
-      setError("Terjadi kesalahan saat memproses pertanyaan. Coba lagi nanti.");
-      setMessages((prev) => [
-        ...prev,
-        {
+      try {
+        /**
+         * Kirim seluruh riwayat percakapan (multi-turn) ke API,
+         * bukan hanya pertanyaan terakhir. Ini biar AI bisa
+         * memahami konteks percakapan sebelumnya.
+         */
+        const res = await fetch("/api/assistant", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            // Payload multi-turn: array semua pesan
+            messages: updatedMessages.map((m) => ({
+              role: m.role,
+              text: m.text,
+            })),
+            // Pertanyaan terakhir juga dikirim terpisah biar backward-compatible
+            question: textToSend,
+          }),
+        });
+
+        const json = await res.json();
+
+        // Sedikit delay artifisial biar typing indicator tidak langsung hilang
+        // (terasa lebih natural, tidak berasa sistem menjawab instan)
+        await new Promise((r) => setTimeout(r, 400));
+
+        const answerText =
+          typeof json.answer === "string" && json.answer.trim()
+            ? json.answer
+            : "Maaf, saya tidak bisa memproses pertanyaan itu sekarang. Coba tanyakan hal lain ya!";
+
+        const aiMessage: ChatMessage = {
           role: "assistant",
-          text: "Maaf, tidak dapat menghubungkan ke Asisten AI. Silakan coba lagi nanti.",
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
-  }
+          text: answerText,
+          timestamp: new Date(),
+        };
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+        setMessages((prev) => [...prev, aiMessage]);
+
+        // Kalau widget sedang tertutup, tambah badge unread
+        if (!isOpen) {
+          setUnreadCount((c) => c + 1);
+        }
+      } catch (err) {
+        console.error("[AssistantWidget] Fetch error:", err);
+        // Kalau error jaringan, tetap tampilkan pesan fallback dari AI
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            text: "Waduh, sepertinya koneksi ke server bermasalah. Coba refresh halaman dan tanya ulang ya! 🙏",
+            timestamp: new Date(),
+          },
+        ]);
+      } finally {
+        setIsTyping(false);
+      }
+    },
+    [inputValue, isTyping, messages, isOpen]
+  );
+
+  /** Submit dari form (tekan Enter atau klik tombol Kirim) */
+  function handleFormSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     sendMessage();
   }
 
+  /** Klik quick-reply langsung trigger sendMessage dengan teks pill yang diklik */
+  function handleQuickReply(promptText: string) {
+    sendMessage(promptText);
+  }
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
+
   return (
-    <div className="fixed bottom-6 right-6 z-[250] flex flex-col items-end">
-      {isOpen ? (
-        <div className="w-[360px] max-w-[calc(100vw-2rem)] rounded-3xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-900/5">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 bg-slate-50 rounded-t-3xl">
-            <div>
-              <p className="text-sm font-black text-slate-900">Asisten AI ClassTrack</p>
-              <p className="text-xs text-slate-500">Tanya data ruangan, jadwal, sensor, atau minta tutorial penggunaan.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsOpen(false)}
-              className="text-slate-500 hover:text-slate-900 transition-colors"
-            >
-              Tutup
-            </button>
-          </div>
+    <>
+      {/*
+        Injeksi keyframe CSS untuk animasi typing dots dan bubble slide.
+        Tidak pakai file CSS terpisah agar widget ini tetap self-contained.
+      */}
+      <style>{`
+        @keyframes assistantDot {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+          30% { transform: translateY(-5px); opacity: 1; }
+        }
+        @keyframes assistantSlideLeft {
+          from { opacity: 0; transform: translateX(-10px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes assistantSlideRight {
+          from { opacity: 0; transform: translateX(10px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes assistantFadeUp {
+          from { opacity: 0; transform: translateY(16px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes assistantPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+          50%       { box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); }
+        }
+      `}</style>
 
-          <div className="space-y-3 border-b border-slate-200 px-4 py-3 bg-slate-50">
-            <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Contoh pertanyaan</p>
-            <div className="flex flex-wrap gap-2">
-              {suggestedPrompts.map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  onClick={() => {
-                    setQuery(prompt);
-                    inputRef.current?.focus();
-                  }}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* ── Posisi fixed di pojok kanan bawah ── */}
+      <div className="fixed bottom-6 right-6 z-[250] flex flex-col items-end gap-3">
 
-          <div className="max-h-[330px] overflow-y-auto px-4 py-3 space-y-3">
-            {messages.map((message, index) => (
-              <div key={index} className={message.role === "user" ? "text-right" : "text-left"}>
-                <div
-                  className={`inline-block rounded-2xl px-4 py-3 text-sm leading-6 ${
-                    message.role === "user"
-                      ? "bg-slate-900 text-white"
-                      : "bg-slate-100 text-slate-800"
-                  }`}
-                >
-                  {message.text}
+        {/* ══ PANEL CHAT ══════════════════════════════════════════════════════ */}
+        {isOpen && (
+          <div
+            className="w-[370px] max-w-[calc(100vw-2rem)] rounded-3xl overflow-hidden shadow-2xl border border-slate-200/80 flex flex-col"
+            style={{
+              animation: "assistantFadeUp 0.3s cubic-bezier(0.16,1,0.3,1) forwards",
+              // Tinggi maksimum chat panel — biar tidak overflow layar kecil
+              maxHeight: "min(600px, calc(100vh - 120px))",
+            }}
+          >
+            {/* ── Header Gradient ─────────────────────────────────────────── */}
+            <div className="bg-gradient-to-r from-[var(--color-primary)] to-[#2a4bc4] px-4 py-3.5 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                {/* Ikon AI */}
+                <div className="w-9 h-9 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30 shadow-inner">
+                  <Sparkles size={16} className="text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-white leading-tight">
+                    Asisten AI ClassTrack
+                  </p>
+                  {/* Status online dengan indikator hijau */}
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                    <span className="text-[10px] text-white/80 font-semibold tracking-wide">
+                      Online · Siap Membantu
+                    </span>
+                  </div>
                 </div>
               </div>
-            ))}
-            {error && <div className="text-xs text-rose-600">{error}</div>}
-          </div>
-
-          <form onSubmit={handleSubmit} className="border-t border-slate-200 px-4 py-3 bg-white rounded-b-3xl">
-            <label htmlFor="assistant-query" className="sr-only">Tanya Asisten AI</label>
-            <div className="flex items-center gap-2">
-              <input
-                ref={inputRef}
-                id="assistant-query"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Tanyakan misal: 'Bagaimana cara booking ruangan?'"
-                className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-              />
+              {/* Tombol Tutup */}
               <button
-                type="submit"
-                disabled={isLoading}
-                className="rounded-2xl bg-[var(--color-primary)] px-4 py-3 text-xs font-black text-white uppercase tracking-[.12em] transition hover:bg-slate-900 disabled:opacity-60"
+                type="button"
+                onClick={() => setIsOpen(false)}
+                aria-label="Tutup asisten"
+                className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-colors"
               >
-                {isLoading ? "Mengirim..." : "Kirim"}
+                <X size={15} className="text-white" />
               </button>
             </div>
-          </form>
-        </div>
-      ) : (
+
+            {/* ── Quick Reply Pills ────────────────────────────────────────── */}
+            <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 shrink-0">
+              <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 mb-2">
+                Contoh Pertanyaan
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_REPLIES.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    disabled={isTyping}
+                    onClick={() => handleQuickReply(prompt)}
+                    className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10.5px] font-semibold text-slate-600 transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Area Pesan (Scrollable) ──────────────────────────────────── */}
+            <div className="flex-1 overflow-y-auto px-4 py-4 bg-white min-h-0">
+              {messages.map((msg, idx) => (
+                <MessageBubble key={idx} message={msg} />
+              ))}
+
+              {/* Typing indicator — muncul saat isTyping = true */}
+              {isTyping && <TypingIndicator />}
+
+              {/*
+                Anchor tak terlihat di paling bawah.
+                useEffect akan scroll ke sini setiap kali pesan baru masuk.
+              */}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* ── Form Input ───────────────────────────────────────────────── */}
+            <form
+              onSubmit={handleFormSubmit}
+              className="border-t border-slate-100 bg-white px-4 py-3 shrink-0"
+            >
+              <div className="flex items-center gap-2">
+                <label htmlFor="assistant-chat-input" className="sr-only">
+                  Tanya Asisten AI ClassTrack
+                </label>
+                <input
+                  ref={inputRef}
+                  id="assistant-chat-input"
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  disabled={isTyping}
+                  placeholder="Tanyakan misal: 'Bagaimana cara booking?'"
+                  className="flex-1 min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-[13px] text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 transition-all disabled:opacity-60"
+                />
+                {/* Tombol Kirim */}
+                <button
+                  type="submit"
+                  disabled={isTyping || !inputValue.trim()}
+                  aria-label="Kirim pesan"
+                  className="w-10 h-10 rounded-2xl bg-[var(--color-primary)] flex items-center justify-center shrink-0 transition-all hover:bg-[var(--color-primary-dark)] disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+                >
+                  <Send size={15} className="text-white" />
+                </button>
+              </div>
+              {/* Teks kecil di bawah input */}
+              <p className="text-[9.5px] text-slate-400 text-center mt-2 font-medium">
+                Asisten AI · Diberdayakan oleh ClassTrack IoT Platform
+              </p>
+            </form>
+          </div>
+        )}
+
+        {/* ══ FAB BUTTON (Floating Action Button) ═══════════════════════════ */}
         <button
           type="button"
-          onClick={() => setIsOpen(true)}
-          className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-4 py-3 text-sm font-black text-white shadow-2xl shadow-slate-900/10 transition hover:bg-slate-900"
+          onClick={() => setIsOpen((prev) => !prev)}
+          aria-label={isOpen ? "Tutup asisten AI" : "Buka asisten AI"}
+          className="relative inline-flex items-center gap-2.5 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#2a4bc4] px-5 py-3 text-sm font-black text-white shadow-xl transition-all hover:shadow-2xl hover:scale-105 active:scale-95"
+          style={{ boxShadow: "0 8px 32px rgba(24,49,130,0.35)" }}
         >
-          Asisten AI
-          <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-white" />
+          {isOpen ? (
+            // Saat widget terbuka, tampilkan chevron turun
+            <>
+              <ChevronDown size={16} />
+              Tutup
+            </>
+          ) : (
+            // Saat widget tertutup, tampilkan ikon sparkles + teks
+            <>
+              <Sparkles size={15} />
+              Asisten AI
+              {/* Indikator status hijau — pakai pulse animation */}
+              <span
+                className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-white"
+                style={{ animation: "assistantPulse 2s ease-in-out infinite" }}
+              />
+              {/* Badge unread — muncul kalau ada pesan baru saat widget tutup */}
+              {unreadCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center shadow">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </>
+          )}
         </button>
-      )}
-    </div>
+      </div>
+    </>
   );
 }
