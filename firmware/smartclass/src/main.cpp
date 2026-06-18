@@ -26,15 +26,15 @@ const char* WIFI_PASSWORD = "charlotteninaz";
 // =====================================================
 // AZURE IOT HUB CONFIGURATION
 // =====================================================
-const char* MQTT_BROKER = "iothub-smart-classroom.azure-devices.net";
+const char* MQTT_BROKER = "iothub-smart-class.azure-devices.net";
 const int MQTT_PORT = 8883;
 
-const char* DEVICE_ID = "esp32-smartclass-ti3b";
+const char* DEVICE_ID = "esp32-smartclass";
 
 // =====================================================
 // DEVICE PRIMARY KEY
 // =====================================================
-const char* DEVICE_KEY = "OjvC1TTYndLC49k+3AUv6NptBvVMn9rvL+cgAxegUUY=";
+const char* DEVICE_KEY = "DRxArr528PC56h2z2SxzL2B4dCzyCqQhovscbFys3cQ=";
 
 // Token berlaku 1 jam
 const long TOKEN_VALID_SECONDS = 3600;
